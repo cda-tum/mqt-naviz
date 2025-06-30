@@ -1,0 +1,63 @@
+name: CI
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  change-detection:
+    name: 🔍 Change
+    uses: ./.github/workflows/reusable-change-detection.yml
+
+  rust-linter:
+    name: 🦀 Lint
+    needs: change-detection
+    if: fromJSON(needs.change-detection.outputs.run-rust-linter)
+    uses: ./.github/workflows/reusable-rust-linter.yml
+    with:
+      build-project: true
+
+  python-linter:
+    name: 🐍 Lint
+    needs: change-detection
+    if: fromJSON(needs.change-detection.outputs.run-python-tests)
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@v1.11
+
+  code-ql:
+    name: 📝 CodeQL
+    needs: change-detection
+    if: fromJSON(needs.change-detection.outputs.run-code-ql)
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-code-ql.yml@v1.11
+    with:
+      enable-cpp: false
+
+  required-checks-pass: # This job does nothing and is only used for branch protection
+    name: 🚦 Check
+    if: always()
+    needs:
+      - change-detection
+      - rust-linter
+      - python-linter
+      - code-ql
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide whether the needed jobs succeeded or failed
+        uses: re-actors/alls-green@release/v1
+        with:
+          allowed-skips: >-
+            ${{
+              fromJSON(needs.change-detection.outputs.run-rust-linter)
+              && '' || 'rust-linter,'
+            }}
+            ${{
+              fromJSON(needs.change-detection.outputs.run-code-ql)
+              && '' || 'code-ql,'
+            }}
+          jobs: ${{ toJSON(needs) }}

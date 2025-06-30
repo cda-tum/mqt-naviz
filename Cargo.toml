@@ -8,9 +8,10 @@ members = [
   "video",
   "repository",
   "import",
-  "python",
+  "bindings",
 ]
 resolver = "2"
 
 [workspace.package]
+edition = "2021"
 repository = "https://github.com/cda-tum/mqt-naviz"

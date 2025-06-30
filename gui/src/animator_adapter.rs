@@ -107,7 +107,7 @@ impl AnimatorAdapter {
 
     /// Gets an [AnimatorState] from this [AnimatorAdapter],
     /// or [None] if not enough inputs were set.
-    /// 
+    ///
     /// Will update internal state
     /// like resetting the `update_full`-state such that full updates only happen if required
     /// (i.e., whenever new instructions/configs are loaded).
@@ -117,7 +117,7 @@ impl AnimatorAdapter {
     /// (or any other [Animator]s use the same states instead of calling [AnimatorAdapter::get]
     /// for each instance),
     /// as otherwise not all [Animator]s may get updated fully.
-    /// 
+    ///
     /// If the [AnimatorState] should be gotten without changing any internal state,
     /// use [AnimatorAdapter::peek] instead.
     #[must_use]
@@ -129,7 +129,7 @@ impl AnimatorAdapter {
 
     /// Gets an [AnimatorState] from this [AnimatorAdapter]
     /// or [None] if not enough inputs were set.
-    /// 
+    ///
     /// Will not do any internal state updates.
     /// If piping this output directly into an [Animator],
     /// [AnimatorAdapter::get] should probably used instead

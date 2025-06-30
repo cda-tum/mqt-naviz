@@ -21,7 +21,7 @@ struct VOutput {
 
 @vertex
 fn vs_main(@builtin(vertex_index) in_vertex_index: u32, spec: CircleSpec) -> VOutput {
-	// Generate vertexes for the bounding square to draw the circle in
+	// Generate vertices for the bounding square to draw the circle in
 
 	// Positions for bounding square
 	var pos = array<vec2<f32>,4>(

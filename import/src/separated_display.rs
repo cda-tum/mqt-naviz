@@ -3,7 +3,7 @@ use std::fmt::Display;
 /// Implements [Display] for a slice by separating the entries with a separator.
 pub struct SeparatedDisplay<'a, T: Display>(pub &'a str, pub &'a [T]);
 
-impl<'a, T: Display> Display for SeparatedDisplay<'a, T> {
+impl<T: Display> Display for SeparatedDisplay<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut iterator = self.1.iter();
         if let Some(value) = iterator.next() {

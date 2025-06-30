@@ -25,7 +25,7 @@ struct VOutput {
 
 @vertex
 fn vs_main(@builtin(vertex_index) in_vertex_index: u32, spec: LineSpec) -> VOutput {
-	// Generate vertexes for the rectangle to draw the line as
+	// Generate vertices for the rectangle to draw the line as
 
 	// Construct perpendicular vector of length width / 2
 	var perp = normalize(spec.end - spec.start);

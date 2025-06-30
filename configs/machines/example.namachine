@@ -256,4 +256,3 @@ trap trap54 {
 trap trap55 {
 	position: (98, 104)
 }
-

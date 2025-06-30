@@ -1,0 +1,155 @@
+[build-system]
+requires = [
+    "maturin>=1.8,<2.0",
+    "setuptools-scm>=8.3.1",
+]
+build-backend = "maturin"
+
+
+[project]
+name = "mqt-naviz"
+description = "A Visualizer for Neutral Atom Quantum Computers"
+readme = "README.md"
+authors = [
+    { name = "Nico Petzendorfer", email = "nico.petzendorfer@tum.de" },
+    { name = "Yannick Stade", email = "yannick.stade@tum.de" },
+]
+keywords = ["MQT", "quantum-computing", "design-automation", "compiler", "visualization", "neutral-atoms"]
+license = "MIT"
+license-files = ["LICENSE.md"]
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/cda-tum/mqt-naviz"
+Documentation = "https://mqt.readthedocs.io/projects/naviz"
+Issues = "https://github.com/cda-tum/mqt-naviz/issues"
+Discussions = "https://github.com/cda-tum/mqt-naviz/discussions"
+
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+manifest-path = "bindings/Cargo.toml"
+python-source = "python"
+python-packages = ["mqt/naviz"]
+module-name = "mqt.naviz.naviz"
+
+
+[tool.check-sdist]
+sdist-only = ["python/mqt/naviz/_version.py"]
+git-only = [
+    "configs/*",
+    "docs/*",
+    "gui/*",
+    ".dockerignore",
+    ".gitignore",
+    ".readthedocs.yaml",
+    "CHANGELOG.md",
+    "Dockerfile",
+    "LICENSE",
+    "UPGRADING.md",
+    "rust-toolchain.toml",
+    "uv.lock",
+]
+
+
+[tool.mypy]
+files = ["python/mqt", "noxfile.py"]
+mypy_path = ["$MYPY_CONFIG_FILE_DIR/python"]
+python_version = "3.9"
+warn_unused_configs = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+strict = true
+disallow_untyped_defs = false
+explicit_package_bases = true
+warn_unreachable = true
+
+
+[tool.ruff]
+line-length = 120
+preview = true
+unsafe-fixes = true
+src = ["python"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "C90", # <...> too complex
+    "COM812", # Conflicts with formatter
+    "CPY001", # Missing copyright notice at top of file
+    "ISC001", # Conflicts with formatter
+    "PLR09", # Too many <...>
+    "PLR2004", # Magic value used in comparison
+    "PLC0415", # Import should be at top of file
+    "S101", # Use of assert detected
+    "S404", # `subprocess` module is possibly insecure
+    "TID252"   # Prefer absolute imports over relative imports from parent modules
+]
+isort.required-imports = ["from __future__ import annotations"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"typing.Callable".msg = "Use collections.abc.Callable instead."
+"typing.Iterator".msg = "Use collections.abc.Iterator instead."
+"typing.Mapping".msg = "Use collections.abc.Mapping instead."
+"typing.Sequence".msg = "Use collections.abc.Sequence instead."
+"typing.Set".msg = "Use collections.abc.Set instead."
+
+[tool.ruff.lint.per-file-ignores]
+"docs/**" = ["INP001"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+
+[tool.pytest.ini_options]
+# We do not have tests yet
+
+
+[tool.coverage]
+# We do not have tests yet
+
+
+[tool.uv]
+required-version = ">=0.5.20"
+reinstall-package = ["mqt-naviz"]
+
+[tool.uv.sources]
+mqt-naviz = { workspace = true }
+
+
+[tool.repo-review]
+# We do not have a .github/dependabot.yml file because we use renovate for dependency management
+ignore = ["GH200"]
+
+
+[dependency-groups]
+build = [
+    "maturin>=1.8,<2.0",
+    "setuptools-scm>=8.3.1",
+]
+docs = [
+    "ipywidgets>=8.1.7",
+    "furo>=2024.8.6",
+    "setuptools-scm>=8.3.1",
+    "sphinx-autoapi>=3.6.0",
+    "sphinx-copybutton>=0.5.2",
+    "sphinx-design>=0.6.1",
+    "sphinxcontrib-svg2pdfconverter>=1.3.0",
+    "sphinxext-opengraph>=0.10.0",
+    "myst-nb>=1.2.0",
+    "sphinx>=7.4.7",
+    "sphinx>=8.1.3; python_version >= '3.10'",
+    "sphinx>=8.2.3; python_version >= '3.11'",
+    "sphinxcontrib-rust>=1.0.0",
+]
+test = []
+dev = [
+    {include-group = "build"},
+    {include-group = "docs"},
+    {include-group = "test"},
+]
