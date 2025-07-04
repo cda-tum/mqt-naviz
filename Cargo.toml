@@ -13,4 +13,5 @@ members = [
 resolver = "2"
 
 [workspace.package]
+license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
 repository = "https://github.com/cda-tum/mqt-naviz"

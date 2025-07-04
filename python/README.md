@@ -38,3 +38,7 @@ export_video(
     default_import_settings("MqtNa"),
 )
 ```
+
+## License
+
+The naviz python-package is licensed under the terms of the [MIT](./LICENSE)-license.
