@@ -1,3 +1,3 @@
-# Support
+```{include} ../.github/support.md
 
-The documentation of MQT NAViz is still under construction.
+```
