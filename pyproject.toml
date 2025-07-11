@@ -38,6 +38,23 @@ features = ["pyo3/extension-module"]
 manifest-path = "python/Cargo.toml"
 
 
+[tool.check-sdist]
+git-only = [
+    "configs/*",
+    "doc/*",
+    "docs/*",
+    "gui/*",
+    "test/*",
+    ".dockerignore",
+    ".gitignore",
+    ".readthedocs.yaml",
+    "Dockerfile",
+    "LICENSE",
+    "rust-toolchain.toml",
+    "uv.lock",
+]
+
+
 [tool.mypy]
 files = ["python/mqt", "noxfile.py"]
 mypy_path = ["$MYPY_CONFIG_FILE_DIR/python"]
@@ -115,8 +132,6 @@ mqt-naviz = { workspace = true }
 
 [tool.repo-review]
 ignore = [
-    "GH102", # We do not have workflow with auto cancel yet
-    "GH103", # We do not have workflow with manual dispatch yet
     "GH200", # We do not have a .github/dependabot.yml file because we use renovate for dependency management
 ]
 

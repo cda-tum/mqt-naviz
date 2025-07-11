@@ -1,0 +1,82 @@
+name-template: "MQT NAViz $RESOLVED_VERSION Release"
+tag-template: "v$RESOLVED_VERSION"
+categories:
+  # Feature-related area labels
+  - title: "🧑‍💻 Updates to the CLI"
+    labels:
+      - "Area: CLI"
+  - title: "📱 Updates to the GUI"
+    labels:
+      - "Area: GUI"
+  - title: "🐍 Updates to the Python Integration"
+    labels:
+      - "Area: Python"
+  - title: "📼 Updates to the Video Export"
+    labels:
+      - "Area: Video Export"
+  # Backend-related area labels
+  - title: "💫 Updates related to animation"
+    labels:
+      - "Area: Animation"
+  - title: "🔍️ Updates related to file parsing"
+    labels:
+      - "Area: File Parser"
+  - title: "🔗 Updates related to supported import formats"
+    labels:
+      - "Area: Import"
+  - title: "🖼️ Updates related to rendering"
+    labels:
+      - "Area: Renderer"
+  - title: "🔧 Updates related to the machine repository"
+    labels:
+      - "Area: Repository"
+  # MQT labels
+  - title: "🚀 Features and Enhancements"
+    labels:
+      - "feature"
+      - "enhancement"
+      - "usability"
+      - "refactor"
+  - title: "🐛 Bug Fixes"
+    labels:
+      - "bug"
+      - "fix"
+  - title: "📄 Documentation"
+    labels:
+      - "documentation"
+  - title: "📦 Packaging"
+    labels:
+      - "packaging"
+  - title: "🧹 Code Quality"
+    labels:
+      - "code quality"
+  - title: "🤖 CI"
+    labels:
+      - "continuous integration"
+  - title: "⬆️ Dependencies"
+    collapse-after: 5
+    labels:
+      - "dependencies"
+      - "submodules"
+      - "github-actions"
+      - "pre-commit"
+change-template: "- $TITLE @$AUTHOR (#$NUMBER)"
+change-title-escapes: '\<*_&'
+version-resolver:
+  major:
+    labels:
+      - "major"
+  minor:
+    labels:
+      - "minor"
+  patch:
+    labels:
+      - "patch"
+  default: patch
+
+template: |
+  ## 👀 What Changed
+
+  $CHANGES
+
+  **Full Changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
