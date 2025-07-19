@@ -237,6 +237,7 @@ coordinate {
 				duty: <percentage> // How much of the dash-segment will be filled
 			}
 		}
+		display: <boolean> // Whether to display the coordinate ticks
 	}
 	number {
 		x {

@@ -300,6 +300,7 @@ impl Animator {
                         duty: Into::<Fraction>::into(visual.coordinate.tick.line.dash.duty).f32(),
                         color: visual.coordinate.tick.color.rgba(),
                     },
+                    display_ticks: visual.coordinate.tick.display,
                     legend: GridLegendConfig {
                         step: (
                             visual.coordinate.number.x.distance.f32(),
@@ -324,6 +325,8 @@ impl Animator {
                                 LeftRightPosition::Right => HPosition::Right,
                             },
                         ),
+                        display_labels: visual.coordinate.axis.display,
+                        display_numbers: visual.coordinate.number.display,
                     },
                 },
                 traps: TrapConfig {
@@ -411,6 +414,7 @@ impl Animator {
                     color: visual.time.font.color.rgba(),
                     family: visual.time.font.family.clone(),
                 },
+                display: visual.time.display,
             },
         };
 

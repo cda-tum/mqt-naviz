@@ -112,6 +112,7 @@ coordinate {
 				duty: 50% // How much of the dash-segment will be filled
 			}
 		}
+		display: true // Whether to display the coordinate ticks
 	}
 	number {
 		x {
