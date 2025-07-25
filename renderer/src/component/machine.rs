@@ -198,6 +198,11 @@ fn get_specs<'a>(
 /// Create the [LineSpec]s for the grid fit to the [ViewportSource].
 #[inline]
 fn get_grid_lines_specs(grid: &GridConfig, vp: ViewportSource) -> Vec<LineSpec> {
+    if !grid.display_ticks {
+        // Don't display any ticks
+        return Vec::new();
+    }
+
     // The viewport-edges clamped to the grid/legend steps
     let vp_left_grid = clamp_to(vp.left(), grid.step.0);
     let vp_top_grid = clamp_to(vp.top(), grid.step.1);
@@ -245,6 +250,12 @@ fn build_number_labels(
     text_buffer: &mut Vec<(String, (f32, f32), Alignment)>,
     vp: ViewportSource,
 ) {
+    if !grid.legend.display_numbers {
+        // Don't display number labels
+        *text_buffer = Vec::new();
+        return;
+    }
+
     // The viewport-edges clamped to the grid/legend steps
     let vp_left_legend = clamp_to(vp.left(), grid.legend.step.0);
     let vp_top_legend = clamp_to(vp.top(), grid.legend.step.1);
@@ -289,6 +300,12 @@ fn add_grid_legend<'a>(
     texts: impl IntoIterator<Item = (&'a str, (f32, f32), Alignment)>,
 ) -> impl Iterator<Item = (&'a str, (f32, f32), Alignment)> {
     let texts = texts.into_iter();
+
+    if !grid.legend.display_labels {
+        // Don't display any labels
+        // Still need to chain (empty) vector to produce same output type
+        return texts.chain(Vec::new());
+    }
 
     // Add axis labels
     texts.chain(vec![

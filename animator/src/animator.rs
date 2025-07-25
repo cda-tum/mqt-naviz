@@ -477,6 +477,11 @@ impl Animator {
 
     /// Format the given [Time] into a time-string according to the [TimeConfig] in the current [VisualConfig].
     fn format_time(&self, time: Time) -> String {
+        if !self.visual.time.display {
+            // Don't display the time
+            return String::new();
+        }
+
         format!(
             "{}{:.*} {}",
             self.visual.time.prefix,
