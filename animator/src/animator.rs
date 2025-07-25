@@ -439,7 +439,6 @@ impl Animator {
 
     /// Gets the [State] at the passed [Time]
     pub fn state(&self, time: Time) -> State {
-        let time_strings = (&self.visual.time.prefix, &self.machine.time.unit);
         State {
             atoms: self
                 .atoms
@@ -467,19 +466,24 @@ impl Animator {
                     },
                 )
                 .collect(),
-            time: format!(
-                "{}{:.*} {}",
-                time_strings.0,
-                self.visual.time.precision.f64().abs().floor() as usize,
-                time,
-                time_strings.1
-            ),
+            time: self.format_time(time),
         }
     }
 
     /// The background color
     pub fn background(&self) -> [u8; 4] {
         self.visual.viewport.color.rgba()
+    }
+
+    /// Format the given [Time] into a time-string according to the [TimeConfig] in the current [VisualConfig].
+    fn format_time(&self, time: Time) -> String {
+        format!(
+            "{}{:.*} {}",
+            self.visual.time.prefix,
+            self.visual.time.precision.f64().abs().floor() as usize,
+            time,
+            self.machine.time.unit,
+        )
     }
 }
 
