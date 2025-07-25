@@ -1,12 +1,14 @@
 use naviz_state::{
-    config::{Config, HPosition, LineConfig, MachineConfig, VPosition, ZoneConfig},
+    config::{
+        Config, GridConfig, HPosition, LineConfig, MachineConfig, TrapConfig, VPosition, ZoneConfig,
+    },
     state::State,
 };
 use wgpu::{Device, Queue, RenderPass};
 
 use crate::{
     buffer_updater::BufferUpdater,
-    viewport::{Viewport, ViewportProjection},
+    viewport::{Viewport, ViewportProjection, ViewportSource},
 };
 
 use super::{
@@ -164,42 +166,68 @@ fn get_specs<'a>(
     text_buffer: &'a mut Vec<(String, (f32, f32), Alignment)>,
 ) -> MachineSpec<'a, impl IntoIterator<Item = (&'a str, (f32, f32), Alignment)>> {
     let MachineConfig { grid, traps, zones } = &config.machine;
+    let viewport_source = viewport_projection.source;
 
-    // The viewport edges
-    let vp_left = viewport_projection.source.left();
-    let vp_right = viewport_projection.source.right();
-    let vp_top = viewport_projection.source.top();
-    let vp_bottom = viewport_projection.source.bottom();
+    let lines = get_grid_lines_specs(grid, viewport_source);
+
+    let traps = get_trap_specs(traps);
+
+    build_number_labels(grid, text_buffer, viewport_source);
+    let texts = add_grid_legend(
+        grid,
+        viewport_source,
+        text_buffer.iter().map(|(t, p, a)| (t.as_str(), *p, *a)),
+    );
+
+    let zones = get_zone_specs(zones);
+
+    MachineSpec {
+        lines,
+        traps,
+        labels: TextSpec {
+            viewport_projection,
+            font_size: grid.legend.font.size,
+            font_family: &grid.legend.font.family,
+            texts,
+            color: grid.legend.font.color,
+        },
+        zones,
+    }
+}
+
+/// Create the [LineSpec]s for the grid fit to the [ViewportSource].
+#[inline]
+fn get_grid_lines_specs(grid: &GridConfig, vp: ViewportSource) -> Vec<LineSpec> {
     // The viewport-edges clamped to the grid/legend steps
-    let vp_left_grid = vp_left - vp_left % grid.step.0;
-    let vp_top_grid = vp_top - vp_top % grid.step.1;
-    let vp_left_legend = vp_left - vp_left % grid.legend.step.0;
-    let vp_top_legend = vp_top - vp_top % grid.legend.step.1;
+    let vp_left_grid = clamp_to(vp.left(), grid.step.0);
+    let vp_top_grid = clamp_to(vp.top(), grid.step.1);
 
-    // Create the LineSpecs for the grid; first x, then y
-    let lines: Vec<_> = range_f32(vp_left_grid, vp_right, grid.step.0)
+    // create LineSpecs; first x, then y
+    range_f32(vp_left_grid, vp.right(), grid.step.0)
         .map(|x| LineSpec {
-            start: [x, vp_top],
-            end: [x, vp_bottom],
+            start: [x, vp.top()],
+            end: [x, vp.bottom()],
             color: grid.line.color,
             width: grid.line.width,
             segment_length: grid.line.segment_length,
             duty: grid.line.duty,
         })
         .chain(
-            range_f32(vp_top_grid, vp_bottom, grid.step.1).map(|y| LineSpec {
-                start: [vp_left, y],
-                end: [vp_right, y],
+            range_f32(vp_top_grid, vp.bottom(), grid.step.1).map(|y| LineSpec {
+                start: [vp.left(), y],
+                end: [vp.right(), y],
                 color: grid.line.color,
                 width: grid.line.width,
                 segment_length: grid.line.segment_length,
                 duty: grid.line.duty,
             }),
         )
-        .collect();
+        .collect()
+}
 
-    // Create the CircleSpecs for the static traps
-    let traps: Vec<_> = traps
+/// Create the [CircleSpec]s for the static traps
+fn get_trap_specs(traps: &TrapConfig) -> Vec<CircleSpec> {
+    traps
         .positions
         .iter()
         .map(|(x, y)| CircleSpec {
@@ -208,11 +236,20 @@ fn get_specs<'a>(
             radius_inner: traps.radius - traps.line_width,
             color: traps.color,
         })
-        .collect();
+        .collect()
+}
 
-    // Create the text specs for the numbers numbers (x then y)
-    // First create strings, then convert to text spec
-    *text_buffer = range_f32(vp_left_legend, vp_right, grid.legend.step.0)
+/// Fill the `text_buffer` with the strings for the legend numbers in x- and y-direction.
+fn build_number_labels(
+    grid: &GridConfig,
+    text_buffer: &mut Vec<(String, (f32, f32), Alignment)>,
+    vp: ViewportSource,
+) {
+    // The viewport-edges clamped to the grid/legend steps
+    let vp_left_legend = clamp_to(vp.left(), grid.legend.step.0);
+    let vp_top_legend = clamp_to(vp.top(), grid.legend.step.1);
+
+    *text_buffer = range_f32(vp_left_legend, vp.right(), grid.legend.step.0)
         .map(|x| {
             (
                 format!("{x}"),
@@ -221,20 +258,20 @@ fn get_specs<'a>(
                     grid.legend
                         .position
                         .0
-                        .get(vp_top - LABEL_PADDING, vp_bottom + LABEL_PADDING),
+                        .get(vp.top() - LABEL_PADDING, vp.bottom() + LABEL_PADDING),
                 ),
                 Alignment(HAlignment::Center, get_v_alignment(grid.legend.position.0)),
             )
         })
         .chain(
-            range_f32(vp_top_legend, vp_bottom, grid.legend.step.1).map(|y| {
+            range_f32(vp_top_legend, vp.bottom(), grid.legend.step.1).map(|y| {
                 (
                     format!("{y}"),
                     (
                         grid.legend
                             .position
                             .1
-                            .get(vp_left - LABEL_PADDING, vp_right + LABEL_PADDING),
+                            .get(vp.left() - LABEL_PADDING, vp.right() + LABEL_PADDING),
                         y,
                     ),
                     Alignment(get_h_alignment(grid.legend.position.1), VAlignment::Center),
@@ -242,9 +279,19 @@ fn get_specs<'a>(
             }),
         )
         .collect();
-    let texts = text_buffer.iter().map(|(t, p, a)| (t.as_str(), *p, *a));
+}
+
+/// Add the grid legends to the `texts`
+#[inline]
+fn add_grid_legend<'a>(
+    grid: &'a GridConfig,
+    vp: ViewportSource,
+    texts: impl IntoIterator<Item = (&'a str, (f32, f32), Alignment)>,
+) -> impl Iterator<Item = (&'a str, (f32, f32), Alignment)> {
+    let texts = texts.into_iter();
+
     // Add axis labels
-    let texts = texts.chain([
+    texts.chain(vec![
         (
             grid.legend.labels.0.as_str(),
             (
@@ -252,8 +299,8 @@ fn get_specs<'a>(
                     .position
                     .1
                     .inverse()
-                    .get(vp_left - LABEL_PADDING, vp_right + LABEL_PADDING),
-                grid.legend.position.0.get(vp_top, vp_bottom),
+                    .get(vp.left() - LABEL_PADDING, vp.right() + LABEL_PADDING),
+                grid.legend.position.0.get(vp.top(), vp.bottom()),
             ),
             Alignment(
                 get_h_alignment(grid.legend.position.1.inverse()),
@@ -263,21 +310,24 @@ fn get_specs<'a>(
         (
             grid.legend.labels.1.as_str(),
             (
-                grid.legend.position.1.get(vp_left, vp_right),
+                grid.legend.position.1.get(vp.left(), vp.right()),
                 grid.legend
                     .position
                     .0
                     .inverse()
-                    .get(vp_top - LABEL_PADDING, vp_bottom + LABEL_PADDING),
+                    .get(vp.top() - LABEL_PADDING, vp.bottom() + LABEL_PADDING),
             ),
             Alignment(
                 HAlignment::Center,
                 get_v_alignment(grid.legend.position.0.inverse()),
             ),
         ),
-    ]);
+    ])
+}
 
-    let zones: Vec<_> = zones
+/// Build the [RectangleSpec]s for the zones
+fn get_zone_specs(zones: &[ZoneConfig]) -> Vec<RectangleSpec> {
+    zones
         .iter()
         .copied()
         .map(
@@ -300,20 +350,7 @@ fn get_specs<'a>(
                 segment_length,
             },
         )
-        .collect();
-
-    MachineSpec {
-        lines,
-        traps,
-        labels: TextSpec {
-            viewport_projection,
-            font_size: grid.legend.font.size,
-            font_family: &grid.legend.font.family,
-            texts,
-            color: grid.legend.font.color,
-        },
-        zones,
-    }
+        .collect()
 }
 
 /// Gets the [VAlignment] based on the passed [VPosition]
@@ -326,4 +363,11 @@ fn get_v_alignment(p: VPosition) -> VAlignment {
 #[inline]
 fn get_h_alignment(p: HPosition) -> HAlignment {
     p.get(HAlignment::Right, HAlignment::Left)
+}
+
+/// Clamps `num` to be in steps of `step`.
+/// Will always round down.
+#[inline]
+fn clamp_to(num: f32, step: f32) -> f32 {
+    num - num % step
 }
