@@ -388,3 +388,85 @@ fn get_h_alignment(p: HPosition) -> HAlignment {
 fn clamp_to(num: f32, step: f32) -> f32 {
     num - num % step
 }
+
+#[cfg(test)]
+mod test {
+    use crate::viewport::ViewportTarget;
+
+    use super::*;
+
+    /// Identity-Viewport, which can be used for testing
+    fn viewport_identity() -> ViewportProjection {
+        ViewportProjection {
+            source: ViewportSource {
+                x: 0.,
+                y: 0.,
+                width: 1.,
+                height: 1.,
+            },
+            target: ViewportTarget {
+                x: 0.,
+                y: 0.,
+                width: 1.,
+                height: 1.,
+            },
+        }
+    }
+
+    /// Sanity-Check: example config should produce plausible results.
+    /// Note: This does not check the exact output of the specs, only plausibility of output counts.
+    #[test]
+    fn example_specs() {
+        let config = Config::example();
+        let viewport_projection = viewport_identity();
+        let mut text_buffer = Vec::new();
+        let specs = get_specs(&config, viewport_projection, &mut text_buffer);
+
+        assert!(!specs.lines.is_empty(), "Did not produce any lines");
+        assert_eq!(
+            specs.traps.len(),
+            config.machine.traps.positions.len(),
+            "Did not produce same number of traps as input"
+        );
+        assert_eq!(
+            specs.zones.len(),
+            config.machine.zones.len(),
+            "Did not produce same number of zones as input"
+        );
+        assert!(
+            specs.labels.texts.into_iter().next().is_some(),
+            "Did not produce any text specs"
+        );
+    }
+
+    /// Sanity-Check: example config with all `display`-options set to `false` should produce plausible results.
+    /// Note: This does not check the exact output of the specs, only plausibility of output counts.
+    #[test]
+    fn example_no_display_specs() {
+        let mut config = Config::example();
+        config.machine.grid.display_ticks = false;
+        config.machine.grid.legend.display_labels = false;
+        config.machine.grid.legend.display_numbers = false;
+        config.time.display = false;
+
+        let viewport_projection = viewport_identity();
+        let mut text_buffer = Vec::new();
+        let specs = get_specs(&config, viewport_projection, &mut text_buffer);
+
+        assert!(specs.lines.is_empty(), "Should not produce any lines");
+        assert_eq!(
+            specs.traps.len(),
+            config.machine.traps.positions.len(),
+            "Did not produce same number of traps as input"
+        );
+        assert_eq!(
+            specs.zones.len(),
+            config.machine.zones.len(),
+            "Did not produce same number of zones as input"
+        );
+        assert!(
+            specs.labels.texts.into_iter().next().is_none(),
+            "Should not produce any text specs"
+        );
+    }
+}
