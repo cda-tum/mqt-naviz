@@ -414,6 +414,7 @@ pub struct TickConfig {
     pub y: Fraction,
     pub color: Color,
     pub line: LineConfig,
+    pub display: bool,
 }
 
 impl TryFrom<Config> for TickConfig {
@@ -424,6 +425,7 @@ impl TryFrom<Config> for TickConfig {
             y: get_item(&mut value, "y")?,
             color: get_item(&mut value, "color")?,
             line: get_item_struct(&mut value, "line")?,
+            display: get_item(&mut value, "display")?,
         })
     }
 }
@@ -792,6 +794,7 @@ mod test {
                             duty: Percentage(Fraction::new(50u64, 1u64)),
                         },
                     },
+                    display: true,
                 },
                 number: NumberConfig {
                     x: NumberConfigConfig {
