@@ -4,8 +4,8 @@ use wgpu::{Device, Queue, RenderPass, TextureFormat};
 use crate::{
     buffer_updater::BufferUpdater,
     component::{
-        atoms::Atoms, legend::Legend, machine::Machine, time::Time, updatable::Updatable,
-        ComponentInit,
+        atoms::Atoms, drawable::Drawable, legend::Legend, machine::Machine, time::Time,
+        updatable::Updatable, ComponentInit,
     },
     globals::Globals,
     layout::Layout,

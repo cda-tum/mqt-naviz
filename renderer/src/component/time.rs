@@ -1,7 +1,9 @@
 use naviz_state::{config::Config, state::State};
 use wgpu::{Device, Queue, RenderPass};
 
-use crate::{buffer_updater::BufferUpdater, viewport::ViewportProjection};
+use crate::{
+    buffer_updater::BufferUpdater, component::drawable::Drawable, viewport::ViewportProjection,
+};
 
 use super::{
     primitive::text::{Alignment, HAlignment, Text, TextSpec, VAlignment},
@@ -51,13 +53,15 @@ impl Time {
         self.text
             .update_viewport((device, queue), screen_resolution);
     }
+}
 
+impl Drawable for Time {
     /// Draws this [Time].
     ///
     /// May overwrite bind groups.
     /// If `REBIND` is `true`, will call the passed `rebind`-function to rebind groups.
     #[inline]
-    pub fn draw<const REBIND: bool>(
+    fn draw<const REBIND: bool>(
         &self,
         render_pass: &mut RenderPass<'_>,
         rebind: impl Fn(&mut RenderPass),

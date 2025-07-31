@@ -6,6 +6,7 @@ use wgpu::{Device, Queue, RenderPass};
 
 use crate::{
     buffer_updater::BufferUpdater,
+    component::drawable::Drawable,
     viewport::{Viewport, ViewportProjection},
 };
 
@@ -85,12 +86,14 @@ impl Atoms {
         self.labels
             .update_viewport((device, queue), screen_resolution);
     }
+}
 
+impl Drawable for Atoms {
     /// Draws these [Atoms].
     ///
     /// May overwrite bind groups.
     /// If `REBIND` is `true`, will call the passed `rebind`-function to rebind groups.
-    pub fn draw<const REBIND: bool>(
+    fn draw<const REBIND: bool>(
         &self,
         render_pass: &mut RenderPass<'_>,
         rebind: impl Fn(&mut RenderPass),

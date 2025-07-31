@@ -8,6 +8,7 @@ use wgpu::{Device, Queue, RenderPass};
 
 use crate::{
     buffer_updater::BufferUpdater,
+    component::drawable::Drawable,
     viewport::{Viewport, ViewportProjection, ViewportSource},
 };
 
@@ -86,12 +87,14 @@ impl Machine {
         self.coordinate_legend
             .update_viewport((device, queue), screen_resolution);
     }
+}
 
+impl Drawable for Machine {
     /// Draws this [Machine].
     ///
     /// May overwrite bind groups.
     /// If `REBIND` is `true`, will call the passed `rebind`-function to rebind groups.
-    pub fn draw<const REBIND: bool>(
+    fn draw<const REBIND: bool>(
         &self,
         render_pass: &mut RenderPass<'_>,
         rebind: impl Fn(&mut RenderPass),
