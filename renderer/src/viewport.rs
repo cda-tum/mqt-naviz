@@ -39,6 +39,27 @@ pub struct ViewportTarget {
     pub height: f32,
 }
 
+impl ViewportProjection {
+    /// An identity-[ViewportProjection].
+    /// Transforms nothing and fills the whole viewport.
+    pub fn identity() -> Self {
+        Self {
+            source: ViewportSource {
+                x: -1.,
+                y: -1.,
+                width: 2.,
+                height: 2.,
+            },
+            target: ViewportTarget {
+                x: -1.,
+                y: -1.,
+                width: 2.,
+                height: 2.,
+            },
+        }
+    }
+}
+
 impl From<ViewportProjection> for Mat4 {
     fn from(ViewportProjection { source, target }: ViewportProjection) -> Self {
         // Content -> Between

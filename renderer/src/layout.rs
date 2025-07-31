@@ -3,8 +3,8 @@ use crate::viewport::{ViewportProjection, ViewportSource, ViewportTarget};
 #[derive(Clone, Copy, Debug)]
 pub struct Layout {
     pub content: ViewportProjection,
-    pub legend: ViewportProjection,
-    pub time: ViewportProjection,
+    pub legend: Option<ViewportProjection>,
+    pub time: Option<ViewportProjection>,
 }
 
 impl Layout {
@@ -33,12 +33,13 @@ impl Layout {
         height: 0.1 - 2. * Self::PADDING,
     };
 
-    /// Creates a new layout based on the passed `screen_size`, `content` size, and `legend_height`.
+    /// Creates a new [Layout] for `content`, `legend`, and `time`
+    /// based on the passed `screen_size`, `content` size, and `legend_height`.
     /// `content` will be padded by `content_padding_y` in y-direction in its viewport-space
     /// (but its [ViewportSource] will stay the same).
     /// Will put the content on the left part of the screen (taking roughly 80%)
     /// and the legend on the right (taking roughly 20%).
-    pub fn new(
+    pub fn new_full(
         screen_size: (u32, u32),
         content: ViewportSource,
         content_padding_y: f32,
@@ -46,16 +47,12 @@ impl Layout {
         time_height: f32,
     ) -> Self {
         // layout content
-        let content_size = get_size_keep_aspect(
+        let content = fit_and_center(
+            content,
+            Self::CONTENT_TARGET,
             screen_size,
-            (Self::CONTENT_TARGET.width, Self::CONTENT_TARGET.height),
-            (content.width, content.height),
+            content_padding_y,
         );
-        let content = ViewportProjection {
-            source: content,
-            target: center_in(Self::CONTENT_TARGET, content_size),
-        };
-        let content = shrink_target_by_source_padding(content, content_padding_y);
 
         // grow legend target by gobbling free space on the left
         let legend_target =
@@ -103,10 +100,43 @@ impl Layout {
 
         Self {
             content,
-            legend,
-            time,
+            legend: Some(legend),
+            time: Some(time),
         }
     }
+
+    /// Creates a new [Layout] which only contains the `content`-viewport.
+    pub fn new_content_only(
+        screen_size: (u32, u32),
+        content: ViewportSource,
+        content_padding_y: f32,
+    ) -> Self {
+        Self {
+            content: fit_and_center(content, Default::default(), screen_size, content_padding_y),
+            legend: None,
+            time: None,
+        }
+    }
+}
+
+/// Gets a [ViewportProjection] that fits and centers the [ViewportSource] into the [ViewportTarget].
+/// Will also shrink the target by `padding_y` in source coordinates.
+fn fit_and_center(
+    source: ViewportSource,
+    target: ViewportTarget,
+    screen_size: (u32, u32),
+    padding_y: f32,
+) -> ViewportProjection {
+    let size = get_size_keep_aspect(
+        screen_size,
+        (target.width, target.height),
+        (source.width, source.height),
+    );
+    let projection = ViewportProjection {
+        source,
+        target: center_in(target, size),
+    };
+    shrink_target_by_source_padding(projection, padding_y)
 }
 
 /// Gets the size of a possible viewport which:

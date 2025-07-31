@@ -33,6 +33,8 @@ pub struct GridConfig {
     pub line: LineConfig,
     /// The config for the legend at the sides
     pub legend: GridLegendConfig,
+    /// Whether to display the coordinate ticks
+    pub display_ticks: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -45,6 +47,10 @@ pub struct GridLegendConfig {
     pub labels: (String, String),
     /// The position of the labels
     pub position: (VPosition, HPosition),
+    /// Whether to display the labels for the x- and y-axis
+    pub display_labels: bool,
+    /// Whether to display the numbers on the axes
+    pub display_numbers: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -118,6 +124,8 @@ pub struct LegendEntry {
 pub struct TimeConfig {
     /// The config for the font of the time-display
     pub font: FontConfig,
+    /// Whether to display the current time
+    pub display: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -198,6 +206,16 @@ impl HPosition {
 }
 
 impl Config {
+    /// Whether the time-area should be displayed
+    pub fn display_time(&self) -> bool {
+        self.time.display
+    }
+
+    /// Whether the sidebar should be displayed
+    pub fn display_sidebar(&self) -> bool {
+        !self.legend.entries.is_empty()
+    }
+
     /// An example [Config]
     pub fn example() -> Self {
         Self {
@@ -210,6 +228,7 @@ impl Config {
                         duty: 1.,
                         color: [127, 127, 127, 255],
                     },
+                    display_ticks: true,
                     legend: GridLegendConfig {
                         step: (40., 40.),
                         font: FontConfig {
@@ -219,6 +238,8 @@ impl Config {
                         },
                         labels: ("x".to_owned(), "y".to_owned()),
                         position: (VPosition::Bottom, HPosition::Left),
+                        display_labels: true,
+                        display_numbers: true,
                     },
                 },
                 traps: TrapConfig {
@@ -332,6 +353,7 @@ impl Config {
                     color: [0, 0, 0, 255],
                     family: "Fira Mono".to_owned(),
                 },
+                display: true,
             },
             content_extent: ((0., 0.), (100., 120.)),
         }
