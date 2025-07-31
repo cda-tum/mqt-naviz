@@ -1,4 +1,4 @@
-name: Lint
+name: 🦀 Lint
 
 # This workflow lints the code and uploads new findings to GitHub.
 # Newly introduced findings will be added to pull requests as review comments.
