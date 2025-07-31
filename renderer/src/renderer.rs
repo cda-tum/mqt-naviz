@@ -220,3 +220,42 @@ fn get_layout(config: &Config, screen_resolution: (u32, u32)) -> Layout {
         )
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn example_layout_has_all_sections() {
+        let config = Config::example();
+
+        let layout = get_layout(&config, (1920, 1080));
+
+        assert!(
+            layout.legend.is_some(),
+            "Example config should produce a layout with space for the legend"
+        );
+        assert!(
+            layout.time.is_some(),
+            "Example config should produce a layout with space for the time"
+        );
+    }
+
+    #[test]
+    fn example_layout_display_none_only_content() {
+        let mut config = Config::example();
+        config.legend.entries = Vec::new(); // No legend
+        config.time.display = false; // No time
+
+        let layout = get_layout(&config, (1920, 1080));
+
+        assert!(
+            layout.legend.is_none(),
+            "Example config without legend and time should not allocates space for legend"
+        );
+        assert!(
+            layout.time.is_none(),
+            "Example config without legend and time should not allocates space for time"
+        );
+    }
+}
