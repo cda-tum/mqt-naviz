@@ -206,6 +206,16 @@ impl HPosition {
 }
 
 impl Config {
+    /// Whether the time-area should be displayed
+    pub fn display_time(&self) -> bool {
+        self.time.display
+    }
+
+    /// Whether the sidebar should be displayed
+    pub fn display_sidebar(&self) -> bool {
+        !self.legend.entries.is_empty()
+    }
+
     /// An example [Config]
     pub fn example() -> Self {
         Self {
