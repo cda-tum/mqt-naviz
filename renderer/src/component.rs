@@ -107,7 +107,7 @@ impl<Spec: bytemuck::NoUninit> Component<Spec> {
             shader_path,
             Default::default(),
         )
-        .unwrap_or_else(|_| panic!("Failed to load shader: {}", shader_path));
+        .unwrap_or_else(|_| panic!("Failed to load shader: {shader_path}"));
 
         let uniform = uniform.unwrap_or_default();
 
@@ -137,13 +137,13 @@ impl<Spec: bytemuck::NoUninit> Component<Spec> {
             layout: Some(&pipeline_layout),
             vertex: VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[instance_buffer_layout],
                 compilation_options: Default::default(),
             },
             fragment: Some(FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState {
                     format,
@@ -190,7 +190,11 @@ impl<Spec: bytemuck::NoUninit> Component<Spec> {
     }
 
     /// Draws this component
-    pub fn draw<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
+    pub fn draw(&self, render_pass: &mut RenderPass<'_>) {
+        if self.instance_count == 0 {
+            // nothing to render
+            return;
+        }
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
         render_pass.set_bind_group(2, &self.bind_group, &[]);

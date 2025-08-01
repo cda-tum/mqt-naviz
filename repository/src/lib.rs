@@ -1,6 +1,8 @@
 //! [Repository] for loading configs.
 //! Also contains bundled configs.
 
+#[cfg(test)]
+use std::cell::RefCell;
 use std::{
     borrow::{Borrow, Cow},
     collections::HashMap,
@@ -9,10 +11,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(not(test))]
 use directories::ProjectDirs;
 use error::{Error, Result};
 use include_dir::{include_dir, Dir};
 use naviz_parser::config::{generic::Config, machine::MachineConfig, visual::VisualConfig};
+#[cfg(test)]
+use tempfile::TempDir;
 
 pub mod error;
 
@@ -26,11 +31,33 @@ const STYLES_SUBDIR: &str = "styles";
 pub struct Repository(HashMap<String, RepositoryEntry>);
 
 /// The project directories for this application
+#[cfg(not(test))]
 fn project_dirs() -> Result<ProjectDirs> {
     ProjectDirs::from("tv", "floeze", "naviz").ok_or(Error::IoError(std::io::Error::new(
         std::io::ErrorKind::NotFound,
         "Failed to get user directory",
     )))
+}
+
+/// Creates a new temporary directory.
+/// Can be used for testing.
+#[cfg(test)]
+fn create_temp_dir() -> TempDir {
+    TempDir::new().expect("Failed to create temporary directory")
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Temporary directory for testing.
+    /// Use [reset_temp_dir] to reset the contents of the directory.
+    static TEMP_DIR: RefCell<TempDir> = RefCell::new(create_temp_dir());
+}
+
+/// Creates a new [TEMP_DIR].
+/// Will delete the old [TEMP_DIR] and all contents.
+#[cfg(test)]
+fn reset_temp_dir() {
+    TEMP_DIR.replace(create_temp_dir());
 }
 
 impl Repository {
@@ -68,8 +95,22 @@ impl Repository {
     }
 
     /// Gets the path of the passed `subdir` of the user-directory
+    #[cfg(not(test))]
     fn user_dir(subdir: &str) -> Result<PathBuf> {
         let directory = project_dirs()?.data_dir().join(subdir);
+
+        if !directory.exists() {
+            fs::create_dir_all(&directory).map_err(Error::IoError)?;
+        }
+
+        Ok(directory)
+    }
+
+    /// Gets the path of the passed `subdir` of the user-directory.
+    /// Uses [TEMP_DIR] for testing.
+    #[cfg(test)]
+    fn user_dir(subdir: &str) -> Result<PathBuf> {
+        let directory = TEMP_DIR.with_borrow(|t| t.path().join(subdir));
 
         if !directory.exists() {
             fs::create_dir_all(&directory).map_err(Error::IoError)?;
@@ -138,6 +179,7 @@ impl Repository {
             .ok_or(Error::IdError)?
             .to_string_lossy()
             .into_owned();
+        // Create temporary entry with the source path to check if the config is valid
         let entry = RepositoryEntry::new(RepositorySource::UserDir(file.to_owned()))?;
         // Ensure the config is valid (i.e., can be parsed correctly)
         entry
@@ -145,13 +187,15 @@ impl Repository {
             .try_into()
             .map_err(Error::ConfigReadError)?;
 
-        fs::copy(
-            file,
-            Self::user_dir(subdir)?.join(file.file_name().unwrap()),
-        )
-        .map_err(Error::IoError)?;
+        // Import: Copy to target path
+        let target_path = Self::user_dir(subdir)?.join(file.file_name().unwrap());
+        fs::copy(file, &target_path).map_err(Error::IoError)?;
 
-        self.0.insert(id, entry);
+        self.0.insert(
+            id,
+            // New repository entry with correct target path
+            RepositoryEntry::new(RepositorySource::UserDir(target_path))?,
+        );
 
         Ok(())
     }
@@ -168,11 +212,27 @@ impl Repository {
         self.import_to_user_dir::<VisualConfig>(STYLES_SUBDIR, file)
     }
 
-    /// The list of entries of this repository: `(id, name)`-pairs
-    pub fn list(&self) -> Vec<(&str, &str)> {
+    /// Delete an imported config from the user dir.
+    pub fn remove_from_user_dir(&mut self, id: &str) -> Result<()> {
+        let (id, entry) = self.0.remove_entry(id).ok_or(Error::IdError)?;
+
+        let RepositorySource::UserDir(path) = entry.source else {
+            // Not imported from user-dir
+            // => add back entry and return error
+            self.0.insert(id, entry);
+            return Err(Error::NotRemovableError);
+        };
+
+        fs::remove_file(path).map_err(Error::IoError)?;
+
+        Ok(())
+    }
+
+    /// The list of entries of this repository: `(id, name, removable)`-pairs
+    pub fn list(&self) -> Vec<(&str, &str, bool)> {
         self.0
             .iter()
-            .map(|(id, entry)| (id.as_str(), entry.name()))
+            .map(|(id, entry)| (id.as_str(), entry.name(), entry.source.is_removable()))
             .collect()
     }
 
@@ -295,6 +355,14 @@ impl RepositorySource {
     pub fn contents_as_config(&self) -> Result<Config> {
         config_from_bytes(self.contents()?.borrow())
     }
+
+    /// Check whether a [RepositoryEntry] from this [RepositorySource] can be removed.
+    pub fn is_removable(&self) -> bool {
+        match self {
+            Self::Bundled(_) => false,
+            Self::UserDir(_) => true,
+        }
+    }
 }
 
 /// Try to parse a [Config] from the passed `bytes`
@@ -334,7 +402,7 @@ mod tests {
             .bundled_machines()
             .expect("Failed to load bundled machines");
 
-        for (id, name) in machines.list() {
+        for (id, name, _) in machines.list() {
             machines
                 .get::<MachineConfig>(id)
                 .expect("Machine exists in `list`, but `get` returned `None`")
@@ -349,11 +417,245 @@ mod tests {
             .bundled_styles()
             .expect("Failed to load bundled styles");
 
-        for (id, name) in styles.list() {
+        for (id, name, _) in styles.list() {
             styles
                 .get::<VisualConfig>(id)
                 .expect("Style exists in `list`, but `get` returned `None`")
                 .unwrap_or_else(|e| panic!("Style \"{name}\" ({id}) is invalid:\n{e:#?}"));
         }
+    }
+
+    /// Test importing configs from the `subdir` of the bundled configs to the `subdir` of the [TEMP_DIR].
+    /// Will use `import_fn` to import the configs to the repo.
+    /// Takes care of resetting the [TEMP_DIR].
+    fn test_import_configs(subdir: &str, import_fn: impl Fn(&mut Repository, &Path) -> Result<()>) {
+        reset_temp_dir();
+
+        // Directory where configs should be imported to
+        let target_dir = Repository::user_dir(subdir).expect("Failed to get config subdirectory");
+
+        // sanity-check: should be initially empty
+        assert!(
+            fs::read_dir(&target_dir)
+                .expect("Failed to get contents of config subdirectory")
+                .next()
+                .is_none(),
+            "New temporary config directory is not empty"
+        );
+
+        // Use bundled configs as source configs
+        let source_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../configs/{subdir}"));
+
+        let configs: Vec<_> = fs::read_dir(&source_dir)
+            .expect("Failed to read bundled configs to import")
+            .map(|f| f.expect("Cannot get file"))
+            .collect();
+
+        // Create new empty repository
+        let mut repo = Repository::empty();
+
+        for config in &configs {
+            import_fn(&mut repo, &config.path()).expect("Failed to import config");
+
+            // Check if imported config exists in repo
+            assert!(
+                repo.has(
+                    config
+                        .path()
+                        .file_stem()
+                        .expect("Failed to get id from filename")
+                        .to_string_lossy()
+                        .borrow()
+                ),
+                "Imported config does not exist in repository"
+            );
+
+            // Check if imported config now exists on disk
+            assert!(
+                fs::exists(target_dir.join(config.file_name())).unwrap_or(false),
+                "Imported config does not exist on disk"
+            );
+        }
+
+        // Check if correct number of configs was imported
+        assert_eq!(
+            configs.len(),
+            repo.list().len(),
+            "Wrong number of files imported in repo"
+        );
+
+        // Check if correct number of configs now exists on disk
+        assert_eq!(
+            configs.len(),
+            fs::read_dir(&target_dir)
+                .expect("Failed to get contents of config subdirectory")
+                .count(),
+            "Wrong number of files imported on disk"
+        );
+
+        // Check if loading from disk also has the same and correct configs
+        let repo_new = Repository::empty()
+            .load_user_dir(subdir)
+            .expect("Failed to load configs from disk");
+        let mut list_old = repo.list();
+        let mut list_new = repo_new.list();
+        list_old.sort();
+        list_new.sort();
+        assert_eq!(
+            list_old, list_new,
+            "Reading imported configs from disk did not give the same configs"
+        );
+    }
+
+    /// Checks whether the [Repository] can successfully import the bundled machines.
+    #[test]
+    fn import_machines() {
+        test_import_configs(MACHINES_SUBDIR, Repository::import_machine_to_user_dir);
+    }
+
+    /// Checks whether the [Repository] can successfully import the bundled styles.
+    #[test]
+    fn import_styles() {
+        test_import_configs(STYLES_SUBDIR, Repository::import_style_to_user_dir);
+    }
+
+    /// Should not be able to remove bundled configs.
+    #[test]
+    fn cannot_remove_bundled_configs() {
+        let mut repo = Repository::empty()
+            .bundled_machines()
+            .expect("Failed to load bundled machines")
+            .bundled_styles()
+            .expect("Failed to load bundled styles");
+
+        let list: Vec<_> = repo
+            .list()
+            .into_iter()
+            .map(|(id, _name, removable)| (id.to_owned(), removable))
+            .collect();
+
+        // sanity-check: repository should not be empty
+        assert!(!list.is_empty(), "Did not load any bundled configs");
+
+        for (id, removable) in list {
+            // sanity-check: repository should contain the config
+            assert!(
+                repo.has(&id),
+                "Repository does not have the config it claims to have"
+            );
+
+            assert!(!removable, "Bundled config is marked as removable");
+
+            assert!(
+                repo.remove_from_user_dir(&id).is_err(),
+                "Trying to remove a bundled config did not return an error"
+            );
+
+            // Config should still exist
+            assert!(
+                repo.has(&id),
+                "Repository deleted a config even though it returned an error"
+            );
+        }
+    }
+
+    /// Test removing imported configs by importing configs from the `subdir` of the bundled configs.
+    /// Will use `import_fn` to import the configs to the repo.
+    /// Takes care of resetting the [TEMP_DIR].
+    /// If `RELOAD` is set, will recreate the repository and load the imported configs from disk.
+    fn test_remove_configs<const RELOAD: bool>(
+        subdir: &str,
+        import_fn: impl Fn(&mut Repository, &Path) -> Result<()>,
+    ) {
+        reset_temp_dir();
+
+        // Directory where configs should be imported to
+        let target_dir = Repository::user_dir(subdir).expect("Failed to get config subdirectory");
+
+        // Use bundled configs as source configs
+        let source_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../configs/{subdir}"));
+
+        let configs: Vec<_> = fs::read_dir(&source_dir)
+            .expect("Failed to read bundled configs to import")
+            .map(|f| f.expect("Cannot get file"))
+            .collect();
+
+        let mut repo = Repository::empty();
+
+        for config in &configs {
+            import_fn(&mut repo, &config.path()).expect("Failed to import config");
+        }
+
+        if RELOAD {
+            repo = Repository::empty()
+                .load_user_dir(subdir)
+                .expect("Failed load configs from disk");
+        }
+
+        assert!(
+            repo.list()
+                .into_iter()
+                .all(|(_id, _name, removable)| removable),
+            "Imported configs not marked as removable"
+        );
+
+        for config in configs {
+            let path = config.path();
+            let id = path
+                .file_stem()
+                .expect("Failed to get id from filename")
+                .to_string_lossy();
+
+            // sanity-check: repository should contain the config
+            assert!(
+                repo.has(&id),
+                "Repository does not have the config it claims to have"
+            );
+
+            let target_path = target_dir.join(config.file_name());
+
+            // sanity-check: config should exist on disk
+            assert!(
+                fs::exists(&target_path).unwrap_or(false),
+                "Imported config does not exist on disk"
+            );
+
+            // remove
+            repo.remove_from_user_dir(&id)
+                .expect("Failed to remove imported config from user dir");
+
+            assert!(!repo.has(&id), "Repository still contains deleted config");
+
+            assert!(
+                !fs::exists(&target_path).unwrap_or(true),
+                "Removed config still exists on disk"
+            );
+        }
+    }
+
+    /// Checks whether the [Repository] can successfully remove imported machines.
+    #[test]
+    fn remove_machines() {
+        test_remove_configs::<false>(MACHINES_SUBDIR, Repository::import_machine_to_user_dir);
+    }
+
+    /// Checks whether the [Repository] can successfully remove imported machines.
+    #[test]
+    fn remove_styles() {
+        test_remove_configs::<false>(STYLES_SUBDIR, Repository::import_style_to_user_dir);
+    }
+
+    /// Checks whether the [Repository] can successfully remove imported machines.
+    /// Will first import the machines and then reload the repository.
+    #[test]
+    fn remove_machines_after_reload() {
+        test_remove_configs::<true>(MACHINES_SUBDIR, Repository::import_machine_to_user_dir);
+    }
+
+    /// Checks whether the [Repository] can successfully remove imported machines.
+    /// Will first import the styles and then reload the repository.
+    #[test]
+    fn remove_styles_after_reload() {
+        test_remove_configs::<true>(STYLES_SUBDIR, Repository::import_style_to_user_dir);
     }
 }

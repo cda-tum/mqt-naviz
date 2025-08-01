@@ -1,0 +1,57 @@
+name: Test
+
+# This workflow tests the code on multiple platforms.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  CACHE_KEY: test
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            image: macos-latest
+          - target: x86_64-apple-darwin
+            image: macos-latest
+          - target: aarch64-unknown-linux-gnu
+            image: ubuntu-24.04-arm
+          - target: x86_64-unknown-linux-gnu
+            image: ubuntu-latest
+          - target: aarch64-pc-windows-msvc
+            image: windows-11-arm
+          - target: x86_64-pc-windows-msvc
+            image: windows-latest
+      fail-fast: false
+    name: Test ${{ matrix.target }}
+    runs-on: ${{ matrix.image }}
+    env: ${{ matrix.env || fromJSON('{}')}}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4^
+      - name: Setup Python Toolchain
+        # Setup a compatible python-toolchain for the python-bindings
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+      - name: Setup Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy
+          cache-key: ${{ env.CACHE_KEY }}-${{ matrix.target}}
+          target: ${{ matrix.target }}
+          rustflags: "" # Don't fail on warnings
+      - name: Run Rust Tests
+        run: cargo test --color=always --all-features --target=${{ matrix.target }}

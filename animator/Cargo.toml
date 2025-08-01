@@ -11,7 +11,7 @@ version = "0.4.1"
 
 [dependencies]
 fraction = "0.15.3"
-naviz-parser = {path = "../parser"}
-naviz-state = {path = "../state"}
+naviz-parser = {workspace = true}
+naviz-state = {workspace = true}
 ordered-float = "4.3.0"
 regex = "1.11.0"

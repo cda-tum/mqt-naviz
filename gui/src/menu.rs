@@ -10,7 +10,7 @@ use std::{
     },
 };
 
-use egui::{Align2, Button, Grid, ScrollArea, Window};
+use egui::{Align, Align2, Button, Grid, Id, Layout, ScrollArea, Window};
 use export::ExportMenu;
 use git_version::git_version;
 use naviz_import::{ImportFormat, ImportOptions, IMPORT_FORMATS};
@@ -33,10 +33,10 @@ pub struct MenuBar {
     about_open: bool,
     /// Export interaction handling (menu, config, progress)
     export_menu: ExportMenu,
-    /// List of machines: `(id, name)`
-    machines: Vec<(String, String)>,
-    /// List of styles: `(id, name)`
-    styles: Vec<(String, String)>,
+    /// List of machines: `(id, name, removable)`
+    machines: Vec<(String, String, bool)>,
+    /// List of styles: `(id, name, removable)`
+    styles: Vec<(String, String, bool)>,
     /// The currently selected machine
     selected_machine: Option<String>,
     /// The currently selected style
@@ -74,6 +74,12 @@ pub enum MenuEvent {
     /// The style at the specified `path` should be imported
     #[cfg(not(target_arch = "wasm32"))]
     ImportStyle(PathBuf),
+    /// The machine with the specified `id` should be removed
+    #[cfg(not(target_arch = "wasm32"))]
+    RemoveMachine(String),
+    /// The style with the specified `id` should be removed
+    #[cfg(not(target_arch = "wasm32"))]
+    RemoveStyle(String),
 }
 
 impl MenuEvent {
@@ -94,6 +100,7 @@ impl MenuEvent {
 }
 
 /// The available FileTypes for opening
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileType {
     Instructions,
     Machine,
@@ -147,22 +154,23 @@ impl MenuBar {
     }
 
     /// Update the machine-list.
-    /// Machines are `(id, name)`.
-    pub fn update_machines(&mut self, machines: Vec<(String, String)>) {
+    /// Machines are `(id, name, removable)`.
+    pub fn update_machines(&mut self, machines: Vec<(String, String, bool)>) {
         self.machines = machines;
-        self.machines.sort_by(|(_, a), (_, b)| a.cmp(b));
+        self.machines.sort_by(|(_, a, _), (_, b, _)| a.cmp(b));
     }
 
     /// Move the compatible machines to the top of the list
     pub fn set_compatible_machines(&mut self, machines: &[String]) {
         // Sort by containment in machines, then by name
-        self.machines.sort_by(|(id_a, name_a), (id_b, name_b)| {
-            machines
-                .contains(id_a)
-                .cmp(&machines.contains(id_b))
-                .reverse()
-                .then_with(|| name_a.cmp(name_b))
-        });
+        self.machines
+            .sort_by(|(id_a, name_a, _), (id_b, name_b, _)| {
+                machines
+                    .contains(id_a)
+                    .cmp(&machines.contains(id_b))
+                    .reverse()
+                    .then_with(|| name_a.cmp(name_b))
+            });
     }
 
     /// Sets the currently selected machine to the passed id.
@@ -172,10 +180,10 @@ impl MenuBar {
     }
 
     /// Update the style-list.
-    /// Styles are `(id, name)`.
-    pub fn update_styles(&mut self, styles: Vec<(String, String)>) {
+    /// Styles are `(id, name, removable)`.
+    pub fn update_styles(&mut self, styles: Vec<(String, String, bool)>) {
         self.styles = styles;
-        self.styles.sort_by(|(_, a), (_, b)| a.cmp(b));
+        self.styles.sort_by(|(_, a, _), (_, b, _)| a.cmp(b));
     }
 
     /// Sets the currently selected style to the passed id.
@@ -323,64 +331,10 @@ impl MenuBar {
             });
 
             // Machine selection
-            ui.menu_button("Machine", |ui| {
-                if ui.button("Open").clicked() {
-                    self.choose_file(FileType::Machine, future_helper, MenuEvent::file_open);
-                    ui.close_menu();
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                if ui.button("Import").clicked() {
-                    self.choose_file(FileType::Machine, future_helper, MenuEvent::file_import);
-                    ui.close_menu();
-                }
-
-                ui.separator();
-
-                ScrollArea::vertical().show(ui, |ui| {
-                    for (id, name) in &self.machines {
-                        if ui
-                            .add(
-                                Button::new(name)
-                                    .selected(self.selected_machine.as_ref() == Some(id)),
-                            )
-                            .clicked()
-                        {
-                            let _ = self.event_channel.0.send(MenuEvent::SetMachine(id.clone()));
-                            ui.close_menu();
-                        }
-                    }
-                });
-            });
+            SelectionMenu::machines(self).draw(ui, future_helper, self);
 
             // Style selection
-            ui.menu_button("Style", |ui| {
-                if ui.button("Open").clicked() {
-                    self.choose_file(FileType::Style, future_helper, MenuEvent::file_open);
-                    ui.close_menu();
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                if ui.button("Import").clicked() {
-                    self.choose_file(FileType::Style, future_helper, MenuEvent::file_import);
-                    ui.close_menu();
-                }
-
-                ui.separator();
-
-                ScrollArea::vertical().show(ui, |ui| {
-                    for (id, name) in &self.styles {
-                        if ui
-                            .add(
-                                Button::new(name)
-                                    .selected(self.selected_style.as_ref() == Some(id)),
-                            )
-                            .clicked()
-                        {
-                            let _ = self.event_channel.0.send(MenuEvent::SetStyle(id.clone()));
-                            ui.close_menu();
-                        }
-                    }
-                });
-            });
+            SelectionMenu::styles(self).draw(ui, future_helper, self);
 
             ui.menu_button("Help", |ui| {
                 if ui.button("About").clicked() {
@@ -500,6 +454,177 @@ impl MenuBar {
                     ui.end_row();
                 });
             });
+    }
+}
+
+/// Top menu allowing to select styles or machines.
+/// Use [SelectionMenu::machines] or [SelectionMenu::styles] to get the respective menus
+/// and [SelectionMenu::draw] to draw the menus.
+struct SelectionMenu<
+    'a,
+    SET: Fn(String) -> MenuEvent + Copy,
+    REMOVE: Fn(String) -> MenuEvent + Copy,
+> {
+    /// Name of the button
+    name: &'static str,
+    /// [FileType] this menu is for
+    file_type: FileType,
+    /// [MenuEvent] to fire when the machine should be set
+    set_event: SET,
+    /// [MenuEvent] to fire when the machine should be removed
+    remove_event: REMOVE,
+    /// Items to display: `(id, name, removable)`
+    items: &'a [(String, String, bool)],
+    /// Which id is currently selected
+    selected: &'a Option<String>,
+}
+
+impl<'a> SelectionMenu<'a, fn(String) -> MenuEvent, fn(String) -> MenuEvent> {
+    /// Create a new [SelectionMenu] that allows selecting the [MenuBar]'s machines.
+    #[inline(always)]
+    fn machines(menu_bar: &'a MenuBar) -> Self {
+        Self {
+            name: "Machines",
+            file_type: FileType::Machine,
+            set_event: MenuEvent::SetMachine,
+            #[cfg(not(target_arch = "wasm32"))]
+            remove_event: MenuEvent::RemoveMachine,
+            #[cfg(target_arch = "wasm32")]
+            remove_event: |_| unreachable!("No imported configs on web"),
+            items: &menu_bar.machines,
+            selected: &menu_bar.selected_machine,
+        }
+    }
+
+    /// Create a new [SelectionMenu] that allows selecting the [MenuBar]'s styles.
+    #[inline(always)]
+    fn styles(menu_bar: &'a MenuBar) -> Self {
+        SelectionMenu {
+            name: "Styles",
+            file_type: FileType::Style,
+            set_event: MenuEvent::SetStyle,
+            #[cfg(not(target_arch = "wasm32"))]
+            remove_event: MenuEvent::RemoveStyle,
+            #[cfg(target_arch = "wasm32")]
+            remove_event: |_| unreachable!("No imported configs on web"),
+            items: &menu_bar.styles,
+            selected: &menu_bar.selected_style,
+        }
+    }
+}
+
+impl<SET: Fn(String) -> MenuEvent + Copy, REMOVE: Fn(String) -> MenuEvent + Copy>
+    SelectionMenu<'_, SET, REMOVE>
+{
+    /// Draws this [SelectionMenu] to the passed [Ui][egui::Ui],
+    /// reacting to events by calling the functions of [MenuBar]
+    /// or sending events through its channel.
+    #[inline(always)]
+    fn draw(&self, ui: &mut egui::Ui, future_helper: &FutureHelper, menu_bar: &MenuBar) {
+        let &Self {
+            name,
+            file_type,
+            set_event,
+            remove_event,
+            items,
+            selected,
+        } = self;
+
+        ui.menu_button(name, |ui| {
+            if ui.button("Open").clicked() {
+                menu_bar.choose_file(file_type, future_helper, MenuEvent::file_open);
+                ui.close_menu();
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            if ui.button("Import").clicked() {
+                menu_bar.choose_file(file_type, future_helper, MenuEvent::file_import);
+                ui.close_menu();
+            }
+
+            ui.separator();
+
+            ScrollArea::vertical().show(ui, |ui| {
+                // Store previous widths to layout
+
+                // IDs
+                let delete_width_id = Id::new(format!("menu.{name}.width#delete"));
+                let full_width_id = Id::new(format!("menu.{name}.width#full"));
+                let hovered_index_id = Id::new(format!("menu.{name}.width#hovered"));
+
+                // Values
+                // Width of delete button
+                let delete_width: f32 = ui
+                    .data(|data| data.get_temp(delete_width_id))
+                    .unwrap_or_default();
+                // Full width of menu
+                let full_width: f32 = ui
+                    .data(|data| data.get_temp(full_width_id))
+                    .unwrap_or_default();
+                // Currently hovered index
+                let hovered: Option<usize> = ui.data(|data| data.get_temp(hovered_index_id));
+
+                // New `delete_width`
+                let mut delete_width_ = None;
+
+                for (idx, (id, name, removable)) in items.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        let show_delete_button = *removable && hovered == Some(idx);
+
+                        // Width for the main button
+                        let button_width = if show_delete_button {
+                            full_width - delete_width
+                        } else {
+                            full_width
+                        };
+
+                        // Render select button
+                        let select_button = ui
+                            .with_layout(
+                                Layout::left_to_right(Align::Center).with_main_align(Align::Min),
+                                |ui| {
+                                    ui.add(
+                                        Button::new(name)
+                                            .selected(selected.as_ref() == Some(id))
+                                            .min_size([button_width, 0.].into()),
+                                    )
+                                },
+                            )
+                            .inner;
+                        if select_button.clicked() {
+                            let _ = menu_bar.event_channel.0.send(set_event(id.clone()));
+                            ui.close_menu();
+                        }
+
+                        // Render delete button
+                        if show_delete_button {
+                            let delete_button =
+                                ui.centered_and_justified(|ui| ui.button("\u{1F5D1}")).inner;
+                            if delete_button.clicked() {
+                                let _ = menu_bar.event_channel.0.send(remove_event(id.clone()));
+                            }
+                            delete_width_ =
+                                Some(delete_button.rect.right() - select_button.rect.right());
+                        }
+
+                        // Check if current entry is hovered
+                        if ui.ui_contains_pointer() {
+                            ui.data_mut(|data| data.insert_temp(hovered_index_id, idx));
+                        }
+                    });
+                }
+
+                // Cursor not over current ui => no element hovered
+                if !ui.ui_contains_pointer() {
+                    ui.data_mut(|data| data.remove_temp::<usize>(hovered_index_id));
+                }
+                // Update delete width
+                if let Some(delete_width_) = delete_width_ {
+                    ui.data_mut(|data| data.insert_temp(delete_width_id, delete_width_));
+                }
+                // Update full width
+                ui.data_mut(|data| data.insert_temp(full_width_id, ui.min_rect().width()));
+            });
+        });
     }
 }
 

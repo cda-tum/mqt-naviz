@@ -1,0 +1,26 @@
+changelog:
+  exclude:
+    labels:
+      - changelog-ignore
+  categories:
+    - title: 🚀 Features and Enhancements
+      labels:
+        - enhancement
+    - title: 🐛 Bug Fixes
+      labels:
+        - bug
+    - title: 📄 Documentation
+      labels:
+        - documentation
+    - title: 🧹 Code Quality
+      labels:
+        - refactor
+    - title: ⬆️ Dependencies
+      labels:
+        - dependencies
+    - title: 📦 Packaging
+      labels:
+        - build
+    - title: Other Changes
+      labels:
+        - "*"

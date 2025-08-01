@@ -54,7 +54,7 @@ impl Rectangles {
 
     /// Draws this component
     #[inline]
-    pub fn draw<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
+    pub fn draw(&self, render_pass: &mut RenderPass<'_>) {
         self.0.draw(render_pass);
     }
 }

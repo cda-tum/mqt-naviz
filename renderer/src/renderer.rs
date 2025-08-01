@@ -166,7 +166,7 @@ impl Renderer {
     }
 
     /// Draws the contents of this [Renderer] to the passed [RenderPass]
-    pub fn draw<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
+    pub fn draw(&self, render_pass: &mut RenderPass<'_>) {
         self.rebind(render_pass);
 
         self.machine.draw::<true>(render_pass, self.rebind_fn());

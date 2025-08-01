@@ -261,7 +261,7 @@ impl<T: PartialEq> winnow::stream::ContainsToken<Token<T>> for Token<T> {
 impl<T: PartialEq> winnow::stream::ContainsToken<Token<T>> for &'_ [Token<T>] {
     #[inline]
     fn contains_token(&self, token: Token<T>) -> bool {
-        self.iter().any(|t| *t == token)
+        self.contains(&token)
     }
 }
 
@@ -270,14 +270,14 @@ impl<T: PartialEq, const LEN: usize> winnow::stream::ContainsToken<Token<T>>
 {
     #[inline]
     fn contains_token(&self, token: Token<T>) -> bool {
-        self.iter().any(|t| *t == token)
+        self.contains(&token)
     }
 }
 
 impl<T: PartialEq, const LEN: usize> winnow::stream::ContainsToken<Token<T>> for [Token<T>; LEN] {
     #[inline]
     fn contains_token(&self, token: Token<T>) -> bool {
-        self.iter().any(|t| *t == token)
+        self.contains(&token)
     }
 }
 

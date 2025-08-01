@@ -10,6 +10,6 @@ repository.workspace = true
 version = "0.3.1"
 
 [dependencies]
-naviz-animator = {path = "../animator"}
-naviz-renderer = {path = "../renderer"}
-wgpu = {version = "22.1.0", default-features = false}
+naviz-animator = {workspace = true}
+naviz-renderer = {workspace = true}
+wgpu = {version = "24", default-features = false}

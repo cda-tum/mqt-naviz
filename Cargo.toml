@@ -15,3 +15,14 @@ resolver = "2"
 [workspace.package]
 license = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
 repository = "https://github.com/cda-tum/mqt-naviz"
+
+[workspace.dependencies]
+naviz-animator = {path = "animator", version = "0.4.1"}
+naviz-gui = {path = "gui", version = "0.6.1"}
+naviz-import = {path = "import", version = "0.1.1"}
+naviz-parser = {path = "parser", version = "0.4.1"}
+naviz-python = {path = "python", version = "0.1.1"}
+naviz-renderer = {path = "renderer", version = "0.5.1"}
+naviz-repository = {path = "repository", version = "0.1.1"}
+naviz-state = {path = "state", version = "0.5.0"}
+naviz-video = {path = "video", version = "0.3.1"}

@@ -19,7 +19,7 @@ pub enum ParseColorError {
 impl Display for ParseColorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::ParseIntError(e) => write!(f, "error while parsing number: {}", e),
+            Self::ParseIntError(e) => write!(f, "error while parsing number: {e}"),
             Self::InvalidLengthError => write!(f, "invalid length for color"),
         }
     }

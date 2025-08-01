@@ -99,7 +99,11 @@ impl AnimatorAdapter {
             let animator = Animator::new(machine.clone(), visual.clone(), instructions.clone());
             self.update_full = true;
             if reset_time || self.animator.is_none() {
-                self.progress_bar = ProgressBar::new(animator.duration().try_into().unwrap());
+                // Recreate progress bar while keeping the old speed
+                self.progress_bar = ProgressBar::new_with_speed(
+                    animator.duration().try_into().unwrap(),
+                    self.progress_bar.get_speed(),
+                );
             }
             self.animator = Some(animator);
         }

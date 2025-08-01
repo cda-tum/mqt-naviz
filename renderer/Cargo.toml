@@ -12,11 +12,11 @@ version = "0.5.1"
 [dependencies]
 bytemuck = "1.18.0"
 glam = {version = "0.29.0", features = ["bytemuck"]}
-glyphon = "0.6.0"
+glyphon = "0.8"
 log = "0.4.22"
-naga_oil = "0.15.0"
-naviz-state = {path = "../state"}
-wgpu = {version = "22.1.0", default-features = false, features = ["wgsl", "naga-ir"]}
+naga_oil = "0.17"
+naviz-state = {workspace = true}
+wgpu = {version = "24", default-features = false, features = ["wgsl", "naga-ir"]}
 
 [build-dependencies]
 ureq = "3.0.5"

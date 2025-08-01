@@ -23,6 +23,7 @@ use crate::{
     },
     errors::{ErrorEmitter, Errors},
     future_helper::FutureHelper,
+    init::{IdOrManual, InitOptions, Persistence},
     menu::{FileType, MenuBar, MenuConfig, MenuEvent},
     util::WEB,
 };
@@ -36,17 +37,7 @@ pub struct App {
     style_repository: Repository,
     current_machine: CurrentMachine,
     errors: Errors,
-}
-
-#[derive(Default)]
-pub struct InitOptions<'a> {
-    /// The machine-id to load
-    machine: Option<&'a str>,
-    /// The style-id to load
-    style: Option<&'a str>,
-    /// The visualization input to load.
-    /// Pass [Some] [ImportOptions] if the content needs to be imported.
-    input: Option<(Option<ImportOptions>, &'a [u8])>,
+    persistence: Persistence,
 }
 
 impl App {
@@ -105,6 +96,7 @@ impl App {
             style_repository,
             current_machine: Default::default(),
             errors,
+            persistence: Default::default(),
         };
 
         app.update_machines();
@@ -134,14 +126,38 @@ impl App {
             .pipe_void(&mut app.errors)
         }
 
-        if let Some(machine_id) = init_options.machine {
-            app.set_machine(machine_id).pipe_void(&mut app.errors);
+        if let Some(machine) = init_options.machine {
+            match machine {
+                IdOrManual::Id(machine_id) => app.set_machine(machine_id),
+                IdOrManual::Manual(data) => app.set_machine_manually(data),
+            }
+            .pipe_void(&mut app.errors)
         }
-        if let Some(style_id) = init_options.style {
-            app.set_style(style_id).pipe_void(&mut app.errors);
+        if let Some(style) = init_options.style {
+            match style {
+                IdOrManual::Id(style_id) => app.set_style(style_id),
+                IdOrManual::Manual(data) => app.set_style_manually(data),
+            }
+            .pipe_void(&mut app.errors)
         }
 
         app
+    }
+
+    /// Create a new instance of the [App] with the specified [InitOptions]
+    /// and loading the last persisted state.
+    /// The passed [InitOptions] will overwrite any persisted options.
+    pub fn new_with_init_and_persistence(
+        cc: &eframe::CreationContext<'_>,
+        init_options: InitOptions<'_>,
+    ) -> Self {
+        if let Some(persistence) = Persistence::load(cc) {
+            let persisted: InitOptions<'_> = (&persistence).into();
+            Self::new_with_init(cc, persisted.merge(init_options))
+        } else {
+            // Nothing previously persisted
+            Self::new_with_init(cc, init_options)
+        }
     }
 
     /// Import the instructions from `data` using the specified [ImportOptions]
@@ -224,7 +240,9 @@ impl App {
                 ConfigFormat::Machine,
             ))?
             .map_err(|e| Error::Repository(RepositoryError::Open(e), ConfigFormat::Machine))?;
-        self.set_loaded_machine(Some(id), machine);
+        self.set_loaded_machine(Some(id.clone()), machine);
+        // keep machine in persistence
+        self.persistence.machine = Some(IdOrManual::Id(id));
         Ok(())
     }
 
@@ -268,6 +286,8 @@ impl App {
             ))
         })?;
         self.set_loaded_machine(None::<String>, machine);
+        // keep machine in persistence
+        self.persistence.machine = Some(IdOrManual::Manual(data.into()));
         Ok(())
     }
 
@@ -282,7 +302,9 @@ impl App {
                 ConfigFormat::Style,
             ))?
             .map_err(|e| Error::Repository(RepositoryError::Open(e), ConfigFormat::Style))?;
-        self.set_loaded_style(Some(id), style);
+        self.set_loaded_style(Some(id.clone()), style);
+        // keep style in persistence
+        self.persistence.style = Some(IdOrManual::Id(id));
         Ok(())
     }
 
@@ -318,6 +340,8 @@ impl App {
             ))
         })?;
         self.set_loaded_style(None::<String>, visual);
+        // keep style in persistence
+        self.persistence.style = Some(IdOrManual::Manual(data.into()));
         Ok(())
     }
 
@@ -327,7 +351,7 @@ impl App {
             self.machine_repository
                 .list()
                 .into_iter()
-                .map(|(a, b)| (a.to_owned(), b.to_owned()))
+                .map(|(id, name, removable)| (id.to_owned(), name.to_owned(), removable))
                 .collect(),
         );
     }
@@ -348,7 +372,7 @@ impl App {
             self.style_repository
                 .list()
                 .into_iter()
-                .map(|(a, b)| (a.to_owned(), b.to_owned()))
+                .map(|(id, name, removable)| (id.to_owned(), name.to_owned(), removable))
                 .collect(),
         );
     }
@@ -418,6 +442,26 @@ impl eframe::App for App {
                         .pipe_void(&mut self.errors);
                     self.update_styles();
                 }
+                #[cfg(not(target_arch = "wasm32"))]
+                MenuEvent::RemoveMachine(id) => {
+                    self.machine_repository
+                        .remove_from_user_dir(&id)
+                        .map_err(|e| {
+                            Error::Repository(RepositoryError::Remove(e), ConfigFormat::Machine)
+                        })
+                        .pipe_void(&mut self.errors);
+                    self.update_machines();
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                MenuEvent::RemoveStyle(id) => {
+                    self.style_repository
+                        .remove_from_user_dir(&id)
+                        .map_err(|e| {
+                            Error::Repository(RepositoryError::Remove(e), ConfigFormat::Style)
+                        })
+                        .pipe_void(&mut self.errors);
+                    self.update_styles();
+                }
             }
         }
 
@@ -467,6 +511,10 @@ impl eframe::App for App {
         });
 
         self.errors.draw(ctx);
+    }
+
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, eframe::APP_KEY, &self.persistence);
     }
 }
 
@@ -543,11 +591,11 @@ impl CallbackTrait for RendererAdapter {
         Vec::new()
     }
 
-    fn paint<'a>(
-        &'a self,
+    fn paint(
+        &self,
         _info: egui::PaintCallbackInfo,
-        render_pass: &mut wgpu::RenderPass<'a>,
-        callback_resources: &'a eframe::egui_wgpu::CallbackResources,
+        render_pass: &mut wgpu::RenderPass<'static>,
+        callback_resources: &eframe::egui_wgpu::CallbackResources,
     ) {
         if let Some(r) = callback_resources.get::<Renderer>() {
             r.draw(render_pass);

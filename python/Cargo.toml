@@ -16,11 +16,11 @@ name = "naviz"
 
 [dependencies]
 futures = "0.3.31"
-naviz-animator = {path = "../animator"}
-naviz-import = {path = "../import", features = ["serde"]}
-naviz-parser = {path = "../parser"}
-naviz-repository = {path = "../repository"}
-naviz-video = {path = "../video"}
-pyo3 = "0.23.3"
+naviz-animator = {workspace = true}
+naviz-import = {workspace = true, features = ["serde"]}
+naviz-parser = {workspace = true}
+naviz-repository = {workspace = true}
+naviz-video = {workspace = true}
+pyo3 = "0.24.2"
 serde = "1.0.217"
-serde-pyobject = "0.5.0"
+serde-pyobject = "0.6.2"

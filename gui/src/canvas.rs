@@ -50,11 +50,11 @@ impl EmptyCanvas {
 }
 
 impl CallbackTrait for EmptyCanvas {
-    fn paint<'a>(
-        &'a self,
+    fn paint(
+        &self,
         _info: egui::PaintCallbackInfo,
-        _render_pass: &mut eframe::wgpu::RenderPass<'a>,
-        _callback_resources: &'a eframe::egui_wgpu::CallbackResources,
+        _render_pass: &mut eframe::wgpu::RenderPass<'static>,
+        _callback_resources: &eframe::egui_wgpu::CallbackResources,
     ) {
     }
 }

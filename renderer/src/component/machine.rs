@@ -50,8 +50,12 @@ impl Machine {
         }: ComponentInit,
     ) -> Self {
         let mut text_buffer = Vec::new();
-        let (lines, traps, labels, zones) =
-            get_specs(config, viewport_projection, &mut text_buffer);
+        let MachineSpec {
+            lines,
+            traps,
+            labels,
+            zones,
+        } = get_specs(config, viewport_projection, &mut text_buffer);
         let viewport = Viewport::new(viewport_projection, device);
 
         Self {
@@ -85,9 +89,9 @@ impl Machine {
     ///
     /// May overwrite bind groups.
     /// If `REBIND` is `true`, will call the passed `rebind`-function to rebind groups.
-    pub fn draw<'a, const REBIND: bool>(
-        &'a self,
-        render_pass: &mut RenderPass<'a>,
+    pub fn draw<const REBIND: bool>(
+        &self,
+        render_pass: &mut RenderPass<'_>,
         rebind: impl Fn(&mut RenderPass),
     ) {
         self.viewport.bind(render_pass);
@@ -121,8 +125,12 @@ impl Updatable for Machine {
     ) {
         self.viewport.update(updater, viewport_projection);
         let mut text_buffer = Vec::new();
-        let (lines, traps, labels, zones) =
-            get_specs(config, viewport_projection, &mut text_buffer);
+        let MachineSpec {
+            lines,
+            traps,
+            labels,
+            zones,
+        } = get_specs(config, viewport_projection, &mut text_buffer);
         self.background_grid.update(updater, &lines);
         self.static_traps.update(updater, &traps);
         self.coordinate_legend.update((device, queue), labels);
@@ -137,17 +145,24 @@ fn range_f32(start: f32, end: f32, step: f32) -> impl Iterator<Item = f32> {
     (0..=steps).map(move |i| start + (i as f32 * step))
 }
 
+#[derive(Clone, Debug)]
+struct MachineSpec<'a, TextIterator: IntoIterator<Item = (&'a str, (f32, f32), Alignment)>> {
+    /// The coordinate grid
+    lines: Vec<LineSpec>,
+    /// Circles to draw to represent the traps
+    traps: Vec<CircleSpec>,
+    /// Axis labels (including the numbers)
+    labels: TextSpec<'a, TextIterator>,
+    /// Rectangles to draw for the zones
+    zones: Vec<RectangleSpec>,
+}
+
 /// Gets the specs for [Machine] from the passed [State] and [Config].
 fn get_specs<'a>(
     config: &'a Config,
     viewport_projection: ViewportProjection,
     text_buffer: &'a mut Vec<(String, (f32, f32), Alignment)>,
-) -> (
-    Vec<LineSpec>,
-    Vec<CircleSpec>,
-    TextSpec<'a, impl IntoIterator<Item = (&'a str, (f32, f32), Alignment)>>,
-    Vec<RectangleSpec>,
-) {
+) -> MachineSpec<'a, impl IntoIterator<Item = (&'a str, (f32, f32), Alignment)>> {
     let MachineConfig { grid, traps, zones } = &config.machine;
 
     // The viewport edges
@@ -287,10 +302,10 @@ fn get_specs<'a>(
         )
         .collect();
 
-    (
+    MachineSpec {
         lines,
         traps,
-        TextSpec {
+        labels: TextSpec {
             viewport_projection,
             font_size: grid.legend.font.size,
             font_family: &grid.legend.font.family,
@@ -298,7 +313,7 @@ fn get_specs<'a>(
             color: grid.legend.font.color,
         },
         zones,
-    )
+    }
 }
 
 /// Gets the [VAlignment] based on the passed [VPosition]

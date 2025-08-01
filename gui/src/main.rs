@@ -4,6 +4,8 @@
 #[cfg(target_arch = "wasm32")]
 use std::sync::Arc;
 
+#[cfg(target_arch = "wasm32")]
+use eframe::egui_wgpu::{WgpuSetup, WgpuSetupCreateNew};
 use naviz_gui::App;
 #[cfg(target_arch = "wasm32")]
 use wgpu::{Adapter, DeviceDescriptor};
@@ -30,7 +32,12 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "naviz",
         native_options,
-        Box::new(|cc| Ok(Box::new(App::new(cc)))),
+        Box::new(|cc| {
+            Ok(Box::new(App::new_with_init_and_persistence(
+                cc,
+                Default::default(),
+            )))
+        }),
     )
 }
 
@@ -38,11 +45,16 @@ fn main() -> eframe::Result {
 #[cfg(target_arch = "wasm32")]
 fn main() {
     // Redirect `log` message to `console.log` and friends:
+
     eframe::WebLogger::init(log::LevelFilter::Debug).ok();
 
     let mut web_options = eframe::WebOptions::default();
-    let default_device_descriptor = web_options.wgpu_options.device_descriptor;
-    web_options.wgpu_options.device_descriptor =
+    let mut wgpu_setup = match web_options.wgpu_options.wgpu_setup {
+        WgpuSetup::CreateNew(setup) => setup,
+        _ => WgpuSetupCreateNew::default(),
+    };
+    let default_device_descriptor = wgpu_setup.device_descriptor;
+    wgpu_setup.device_descriptor =
         limit_texture_to_screen_if_required(default_device_descriptor, || {
             let screen_resolution = web_sys::window()
                 .and_then(|w| w.screen().ok())
@@ -53,6 +65,7 @@ fn main() {
                 .map(|((w, h), r)| (((w as f64) * r) as u32, ((h as f64) * r) as u32))
                 .expect("Failed to get screen resolution")
         });
+    web_options.wgpu_options.wgpu_setup = WgpuSetup::CreateNew(wgpu_setup);
 
     wasm_bindgen_futures::spawn_local(async {
         use eframe::wasm_bindgen::JsCast;
@@ -67,7 +80,12 @@ fn main() {
             .start(
                 canvas,
                 web_options,
-                Box::new(|cc| Ok(Box::new(App::new(cc)))),
+                Box::new(|cc| {
+                    Ok(Box::new(App::new_with_init_and_persistence(
+                        cc,
+                        Default::default(),
+                    )))
+                }),
             )
             .await;
 

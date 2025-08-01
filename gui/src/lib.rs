@@ -12,6 +12,7 @@ mod errors;
 mod export_dialog;
 mod future_helper;
 mod import;
+pub mod init;
 mod menu;
 mod progress_bar;
 mod util;

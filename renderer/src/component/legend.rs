@@ -41,7 +41,7 @@ impl Legend {
             screen_resolution,
         }: ComponentInit,
     ) -> Self {
-        let (text, colors) = get_specs(config, viewport_projection);
+        let LegendSpec { text, colors } = get_specs(config, viewport_projection);
         let viewport = Viewport::new(viewport_projection, device);
 
         Self {
@@ -66,9 +66,9 @@ impl Legend {
     ///
     /// May overwrite bind groups.
     /// If `REBIND` is `true`, will call the passed `rebind`-function to rebind groups.
-    pub fn draw<'a, const REBIND: bool>(
-        &'a self,
-        render_pass: &mut RenderPass<'a>,
+    pub fn draw<const REBIND: bool>(
+        &self,
+        render_pass: &mut RenderPass<'_>,
         rebind: impl Fn(&mut RenderPass),
     ) {
         self.viewport.bind(render_pass);
@@ -99,20 +99,25 @@ impl Updatable for Legend {
         viewport_projection: ViewportProjection,
     ) {
         self.viewport.update(updater, viewport_projection);
-        let (text, colors) = get_specs(config, viewport_projection);
+        let LegendSpec { text, colors } = get_specs(config, viewport_projection);
         self.text.update((device, queue), text);
         self.colors.update(updater, &colors);
     }
+}
+
+#[derive(Clone, Debug)]
+struct LegendSpec<'a, TextIterator: IntoIterator<Item = (&'a str, (f32, f32), Alignment)>> {
+    /// The legend text to draw
+    text: TextSpec<'a, TextIterator>,
+    /// The circles representing the colors to the left of the text
+    colors: Vec<CircleSpec>,
 }
 
 /// Gets the specs for [Legend] from the passed [State] and [Config].
 fn get_specs(
     config: &Config,
     viewport_projection: ViewportProjection,
-) -> (
-    TextSpec<'_, impl IntoIterator<Item = (&'_ str, (f32, f32), Alignment)>>,
-    Vec<CircleSpec>,
-) {
+) -> LegendSpec<'_, impl IntoIterator<Item = (&'_ str, (f32, f32), Alignment)>> {
     let LegendConfig {
         font,
         heading_skip,
@@ -180,5 +185,5 @@ fn get_specs(
         color: font.color,
     };
 
-    (text, colors)
+    LegendSpec { text, colors }
 }

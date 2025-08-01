@@ -10,6 +10,7 @@ pub enum Error {
     LexError(usize, ParseErrorInner),
     ParseError(usize, ParseErrorInner),
     ConfigReadError(naviz_parser::config::error::Error),
+    NotRemovableError,
 }
 
 impl Error {

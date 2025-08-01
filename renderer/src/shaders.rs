@@ -17,7 +17,7 @@ pub fn compile_shader(
     source: &'static str,
     path: &'static str,
     defines: HashMap<String, ShaderDefValue>,
-) -> Result<ShaderModule, ComposerError> {
+) -> Result<ShaderModule, Box<ComposerError>> {
     let module = composer.make_naga_module(NagaModuleDescriptor {
         source,
         file_path: path,
@@ -45,7 +45,7 @@ pub fn create_composer() -> Composer {
 }
 
 /// Loads the default shaders to the passed [Composer].
-pub fn load_default_shaders(mut composer: Composer) -> Result<Composer, ComposerError> {
+pub fn load_default_shaders(mut composer: Composer) -> Result<Composer, Box<ComposerError>> {
     composer.add_composable_module(ComposableModuleDescriptor {
         source: include_str!("./util.wgsl"),
         file_path: "util.wgsl",

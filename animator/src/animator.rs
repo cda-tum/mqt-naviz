@@ -205,13 +205,16 @@ impl Animator {
             }
         }
 
-        // Grow content extent to fit zones
-        for x in machine.zone.iter().flat_map(|z| [z.1.from.0, z.1.to.0]) {
+        // Grow content extent to fit zones and traps
+        for (x, y) in machine
+            .zone
+            .iter()
+            .flat_map(|z| [z.1.from, z.1.to])
+            .chain(machine.trap.iter().map(|t| t.1.position))
+        {
             content_extent.0 = content_extent.0.min(x);
-            content_extent.2 = content_extent.2.max(x);
-        }
-        for y in machine.zone.iter().flat_map(|z| [z.1.from.1, z.1.to.1]) {
             content_extent.1 = content_extent.1.min(y);
+            content_extent.2 = content_extent.2.max(x);
             content_extent.3 = content_extent.3.max(y);
         }
 

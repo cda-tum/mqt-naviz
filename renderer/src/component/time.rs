@@ -57,9 +57,9 @@ impl Time {
     /// May overwrite bind groups.
     /// If `REBIND` is `true`, will call the passed `rebind`-function to rebind groups.
     #[inline]
-    pub fn draw<'a, const REBIND: bool>(
-        &'a self,
-        render_pass: &mut RenderPass<'a>,
+    pub fn draw<const REBIND: bool>(
+        &self,
+        render_pass: &mut RenderPass<'_>,
         rebind: impl Fn(&mut RenderPass),
     ) {
         self.text.draw::<REBIND>(render_pass, rebind);

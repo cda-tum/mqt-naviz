@@ -45,7 +45,11 @@ impl Atoms {
             screen_resolution,
         }: ComponentInit,
     ) -> Self {
-        let (atom_circles, shuttles, labels) = get_specs(config, state, viewport_projection);
+        let AtomSpec {
+            atom_circles,
+            shuttles,
+            labels,
+        } = get_specs(config, state, viewport_projection);
         let viewport = Viewport::new(viewport_projection, device);
 
         Self {
@@ -86,9 +90,9 @@ impl Atoms {
     ///
     /// May overwrite bind groups.
     /// If `REBIND` is `true`, will call the passed `rebind`-function to rebind groups.
-    pub fn draw<'a, const REBIND: bool>(
-        &'a self,
-        render_pass: &mut RenderPass<'a>,
+    pub fn draw<const REBIND: bool>(
+        &self,
+        render_pass: &mut RenderPass<'_>,
         rebind: impl Fn(&mut RenderPass),
     ) {
         self.viewport.bind(render_pass);
@@ -107,7 +111,11 @@ impl Updatable for Atoms {
         config: &Config,
         state: &State,
     ) {
-        let (atom_circles, shuttles, labels) = get_specs(config, state, self.viewport_projection);
+        let AtomSpec {
+            atom_circles,
+            shuttles,
+            labels,
+        } = get_specs(config, state, self.viewport_projection);
         self.atoms.update(updater, &atom_circles);
         self.shuttles.update(updater, &shuttles);
         self.labels.update((device, queue), labels);
@@ -128,16 +136,22 @@ impl Updatable for Atoms {
     }
 }
 
+#[derive(Clone, Debug)]
+struct AtomSpec<'a, TextIterator: IntoIterator<Item = (&'a str, (f32, f32), Alignment)>> {
+    /// Circles representing the atoms
+    atom_circles: Vec<CircleSpec>,
+    /// Lines representing the atom shuttles
+    shuttles: Vec<LineSpec>,
+    /// Labels drawn over the atoms at their positions
+    labels: TextSpec<'a, TextIterator>,
+}
+
 /// Gets the specs for [Atoms] from the passed [State] and [Config].
 fn get_specs<'a>(
     config: &'a Config,
     state: &'a State,
     viewport_projection: ViewportProjection,
-) -> (
-    Vec<CircleSpec>,
-    Vec<LineSpec>,
-    TextSpec<'a, impl IntoIterator<Item = (&'a str, (f32, f32), Alignment)>>,
-) {
+) -> AtomSpec<'a, impl IntoIterator<Item = (&'a str, (f32, f32), Alignment)>> {
     let atoms = &state.atoms;
     let AtomsConfig { shuttle, label } = &config.atoms;
 
@@ -214,15 +228,15 @@ fn get_specs<'a>(
         )
         .collect();
 
-    (
+    AtomSpec {
         atom_circles,
         shuttles,
-        TextSpec {
+        labels: TextSpec {
             viewport_projection,
             font_size: label.size,
             font_family: &label.family,
             texts: labels,
             color: label.color,
         },
-    )
+    }
 }

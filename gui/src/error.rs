@@ -55,6 +55,7 @@ pub enum RepositoryError {
     Load(RepositoryLoadSource, naviz_repository::error::Error),
     Open(naviz_repository::error::Error),
     Import(naviz_repository::error::Error),
+    Remove(naviz_repository::error::Error),
     Search,
 }
 
@@ -85,6 +86,8 @@ impl Error {
             Self::Repository(RepositoryError::Load(RepositoryLoadSource::UserDir, _), ConfigFormat::Style) => "Failed to load styles from user-dir",
             Self::Repository(RepositoryError::Import(_), ConfigFormat::Machine) => "Failed to import machine to user-dir",
             Self::Repository(RepositoryError::Import(_), ConfigFormat::Style) => "Failed to import machine to user-dir",
+            Self::Repository(RepositoryError::Remove(_), ConfigFormat::Machine) => "Failed to remove machine from user-dir",
+            Self::Repository(RepositoryError::Remove(_), ConfigFormat::Style) => "Failed to remove style from user-dir",
         }
     }
 

@@ -194,8 +194,8 @@ impl ExportProgress {
         Self {
             state: ExportProgressState::Creating,
             receiver,
-            window_id: format!("export_progress_{}", num),
-            grid_id: format!("export_progress_grid_{}", num),
+            window_id: format!("export_progress_{num}"),
+            grid_id: format!("export_progress_grid_{num}"),
         }
     }
 

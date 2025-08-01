@@ -1,0 +1,64 @@
+name: GitHub Pages nightly web builds
+
+# This workflow builds the latest web-version of naviz an publishes it to GitHub Pages.
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*" # Rebuild when a full version is released
+
+# Cancel any old builds when starting a new build
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  CACHE_KEY: gh-pages_naviz-web
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # fetch full history with tags
+          fetch-depth: 0
+          # but only history (treeless)
+          filter: "tree:0"
+      - name: Setup Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-key: ${{ env.CACHE_KEY }}
+          target: wasm32-unknown-unknown
+      - name: Install trunk
+        run: cargo install trunk
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+      - name: Build
+        working-directory: gui
+        run: trunk build --release --public-url "${{ steps.pages.outputs.base_path }}"
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./gui/dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs: build
+    runs-on: ubuntu-latest
+    name: Deploy
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

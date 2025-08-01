@@ -10,10 +10,10 @@ use naviz_animator::animator::Animator;
 use naviz_renderer::renderer::Renderer;
 use wgpu::{
     Buffer, BufferView, Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Extent3d,
-    Features, ImageCopyBuffer, ImageCopyTexture, ImageDataLayout, Instance, InstanceDescriptor,
-    Limits, LoadOp, MapMode, MemoryHints, Operations, Queue, RenderPassColorAttachment,
-    RenderPassDescriptor, StoreOp, Texture, TextureAspect, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureUsages,
+    Features, Instance, InstanceDescriptor, Limits, LoadOp, MapMode, MemoryHints, Operations,
+    Queue, RenderPassColorAttachment, RenderPassDescriptor, StoreOp, TexelCopyBufferInfo,
+    TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor,
+    TextureDimension, TextureFormat, TextureUsages,
 };
 
 /// Struct to export a video from an [Animator]
@@ -40,7 +40,7 @@ pub enum VideoProgress {
 
 /// Creates a headless rendering [Device] and [Queue]
 async fn create_device() -> (Device, Queue) {
-    let instance = Instance::new(InstanceDescriptor::default());
+    let instance = Instance::new(&InstanceDescriptor::default());
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
@@ -150,6 +150,11 @@ impl VideoExport {
                 format!("{}/1", self.fps).as_str(),
                 "-i",
                 "-",
+                // Set chroma subsampling for some video players
+                // See https://trac.ffmpeg.org/wiki/Encode/H.264#Encodingfordumbplayers
+                // Should be ignored on formats that don't support it
+                "-vf",
+                "format=yuv420p",
                 "-y",
             ])
             .arg(target)
@@ -238,15 +243,15 @@ impl VideoExport {
         }
 
         encoder.copy_texture_to_buffer(
-            ImageCopyTexture {
+            TexelCopyTextureInfo {
                 aspect: TextureAspect::All,
                 texture: &self.texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
-            ImageCopyBuffer {
+            TexelCopyBufferInfo {
                 buffer: &self.output_buffer,
-                layout: ImageDataLayout {
+                layout: TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(
                         self.screen_resolution.0 * self.texture.format().components() as u32,
@@ -264,7 +269,7 @@ impl VideoExport {
         buffer_slice.map_async(MapMode::Read, move |result| {
             tx.send(result).unwrap();
         });
-        self.device.poll(wgpu::Maintain::Wait);
+        self.device.poll(wgpu::MaintainBase::Wait);
         rx.recv().unwrap().unwrap();
 
         buffer_slice.get_mapped_range()
