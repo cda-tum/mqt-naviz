@@ -3,7 +3,7 @@
 use egui::{TextEdit, Ui};
 use naviz_import::{ImportFormat, ImportOptions};
 
-use crate::{drawable::Drawable, menu::FileFilter};
+use crate::{drawable::Drawable, file_type::FileFilter};
 
 impl FileFilter for ImportFormat {
     fn name(&self) -> &'static str {

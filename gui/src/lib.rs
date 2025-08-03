@@ -10,6 +10,7 @@ mod error;
 mod errors;
 #[cfg(not(target_arch = "wasm32"))]
 mod export_dialog;
+pub mod file_type;
 mod future_helper;
 mod import;
 pub mod init;
