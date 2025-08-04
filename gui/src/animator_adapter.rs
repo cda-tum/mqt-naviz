@@ -21,6 +21,10 @@ pub struct AnimatorAdapter {
     machine: Option<MachineConfig>,
     visual: Option<VisualConfig>,
     instructions: Option<Instructions>,
+
+    /// Force Zen-mode.
+    /// See [Renderer::force_zen].
+    force_zen: bool,
 }
 
 /// The animator state at a current time (as set by [AnimatorAdapter::set_time]),
@@ -36,6 +40,10 @@ pub struct AnimatorState {
     config: Arc<Config>,
     /// The background color
     background: [u8; 4],
+    /// Force Zen-mode
+    /// See [Animator::force_zen].
+    /// Will only be updated on a [full update][AnimatorState::update_full].
+    force_zen: bool,
 }
 
 impl AnimatorState {
@@ -50,6 +58,7 @@ impl AnimatorState {
         let config = &self.config;
         let state = &self.state;
         if self.update_full {
+            renderer.set_force_zen(self.force_zen);
             renderer.update_full(updater, device, queue, config, state);
         } else {
             renderer.update(updater, device, queue, config, state);
@@ -84,6 +93,24 @@ impl AnimatorAdapter {
     /// Gets the instructions
     pub fn get_instructions(&self) -> Option<&Instructions> {
         self.instructions.as_ref()
+    }
+
+    /// Whether to force the zen-mode.
+    /// See [Renderer::set_force_zen].
+    pub fn set_force_zen(&mut self, force_zen: bool) {
+        if self.force_zen == force_zen {
+            // No change
+            return;
+        }
+
+        self.force_zen = force_zen;
+        // requires re-layout => requires full update
+        self.update_full = true;
+    }
+
+    /// Gets whether the zen-mode is currently forced as set by [AnimatorAdapter::set_force_zen]
+    pub fn get_force_zen(&self) -> bool {
+        self.force_zen
     }
 
     /// Recreates the animator.
@@ -144,6 +171,7 @@ impl AnimatorAdapter {
             config: animator.config(),
             state: animator.state((self.progress_bar.animation_time() as f32).into()),
             background: animator.background(),
+            force_zen: self.force_zen,
         })
     }
 

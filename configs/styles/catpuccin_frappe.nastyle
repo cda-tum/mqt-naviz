@@ -122,6 +122,7 @@ coordinate {
 				duty: 100%
 			}
 		}
+		display: true
 	}
 	number {
 		x {

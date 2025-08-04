@@ -229,11 +229,10 @@ impl Repository {
     }
 
     /// The list of entries of this repository: `(id, name, removable)`-pairs
-    pub fn list(&self) -> Vec<(&str, &str, bool)> {
+    pub fn list(&self) -> impl Iterator<Item = (&str, &str, bool)> {
         self.0
             .iter()
             .map(|(id, entry)| (id.as_str(), entry.name(), entry.source.is_removable()))
-            .collect()
     }
 
     /// Checks whether the repository has an entry with `id`
@@ -480,7 +479,7 @@ mod tests {
         // Check if correct number of configs was imported
         assert_eq!(
             configs.len(),
-            repo.list().len(),
+            repo.list().count(),
             "Wrong number of files imported in repo"
         );
 
@@ -497,8 +496,8 @@ mod tests {
         let repo_new = Repository::empty()
             .load_user_dir(subdir)
             .expect("Failed to load configs from disk");
-        let mut list_old = repo.list();
-        let mut list_new = repo_new.list();
+        let mut list_old: Vec<_> = repo.list().collect();
+        let mut list_new: Vec<_> = repo_new.list().collect();
         list_old.sort();
         list_new.sort();
         assert_eq!(
@@ -530,7 +529,6 @@ mod tests {
 
         let list: Vec<_> = repo
             .list()
-            .into_iter()
             .map(|(id, _name, removable)| (id.to_owned(), removable))
             .collect();
 
@@ -593,9 +591,7 @@ mod tests {
         }
 
         assert!(
-            repo.list()
-                .into_iter()
-                .all(|(_id, _name, removable)| removable),
+            repo.list().all(|(_id, _name, removable)| removable),
             "Imported configs not marked as removable"
         );
 
