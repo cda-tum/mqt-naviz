@@ -1,6 +1,11 @@
 use core::str;
+use std::ops::{Deref, DerefMut};
 #[cfg(not(target_arch = "wasm32"))]
-use std::{sync::mpsc::channel, thread};
+use std::{
+    path::{Path, PathBuf},
+    sync::mpsc::Sender,
+    thread,
+};
 
 use eframe::egui_wgpu::CallbackTrait;
 use log::error;
@@ -10,7 +15,7 @@ use naviz_renderer::renderer::Renderer;
 use naviz_repository::Repository;
 use naviz_state::{config::Config, state::State};
 #[cfg(not(target_arch = "wasm32"))]
-use naviz_video::VideoExport;
+use naviz_video::{VideoExport, VideoProgress};
 
 use crate::{
     animator_adapter::{AnimatorAdapter, AnimatorState},
@@ -22,31 +27,164 @@ use crate::{
         RepositoryLoadSource, Result,
     },
     errors::{ErrorEmitter, Errors},
+    file_type::FileType,
     future_helper::FutureHelper,
     init::{IdOrManual, InitOptions, Persistence},
-    menu::{FileType, MenuBar, MenuConfig, MenuEvent},
+    menu::MenuBar,
     util::WEB,
 };
 
-/// The main App to draw using [egui]/[eframe]
+/// The main App to draw using [egui]/[eframe].
+///
+/// Can be dereferenced to [AppState] to interface with and update the state.
 pub struct App {
+    state: AppState,
+    ui: AppUI,
     future_helper: FutureHelper,
-    menu_bar: MenuBar,
+}
+
+/// The state of the app.
+/// Contains all internal state and the interface to update the app's state.
+/// Is contained in the [App].
+pub struct AppState {
     animator_adapter: AnimatorAdapter,
     machine_repository: Repository,
     style_repository: Repository,
     current_machine: CurrentMachine,
-    errors: Errors,
+    current_style_id: Option<String>,
     persistence: Persistence,
+    cache: AppCache,
+}
+
+/// Caches some states of the app for operations such as sorting.
+#[derive(Default)]
+struct AppCache {
+    /// sorted machine list
+    machines: Vec<(String, String, bool)>,
+    /// sorted style list
+    styles: Vec<(String, String, bool)>,
+}
+
+impl AppCache {
+    /// Materializes the [list][Repository::list] of the passed [Repository].
+    fn materialize(repo: &Repository) -> Vec<(String, String, bool)> {
+        repo.list()
+            .map(|(id, name, removable)| (id.to_string(), name.to_string(), removable))
+            .collect()
+    }
+
+    /// Iterates over the passed list
+    fn iter(vec: &[(String, String, bool)]) -> impl Iterator<Item = (&str, &str, bool)> {
+        vec.iter()
+            .map(|(id, name, removable)| (id.as_str(), name.as_str(), *removable))
+    }
+
+    /// Updates the cached list of machines from the passed machine-[Repository] and the passed list of compatible machine-IDs
+    pub fn update_machines(&mut self, machine_repository: &Repository, compatible: &[String]) {
+        self.machines = Self::materialize(machine_repository);
+        self.machines
+            .sort_by(|(a_id, a_name, _), (b_id, b_name, _)| {
+                compatible
+                    .contains(a_id)
+                    .cmp(&compatible.contains(b_id))
+                    .reverse()
+                    .then_with(|| a_name.cmp(b_name))
+            });
+    }
+
+    /// Updates the cached list of styles from the passed style-[Repository]
+    pub fn update_styles(&mut self, style_repository: &Repository) {
+        self.styles = Self::materialize(style_repository);
+        self.styles
+            .sort_by(|(_, a_name, _), (_, b_name, _)| a_name.cmp(b_name));
+    }
+
+    /// Gets the (cached and sorted) list of machines
+    pub fn machines(&self) -> impl Iterator<Item = (&str, &str, bool)> {
+        Self::iter(&self.machines)
+    }
+
+    /// Gets the (cached and sorted) list of styles
+    pub fn styles(&self) -> impl Iterator<Item = (&str, &str, bool)> {
+        Self::iter(&self.styles)
+    }
+}
+
+/// The UI-elements of the [App].
+struct AppUI {
+    menu_bar: MenuBar,
+    errors: Errors,
+}
+
+impl Deref for App {
+    type Target = AppState;
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
+}
+
+impl DerefMut for App {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.state
+    }
 }
 
 impl App {
-    /// Create a new instance of the [App]
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        RendererAdapter::setup(cc);
-
+    /// Creates a new [App] by constructing an [AppState].
+    /// Also [sets up][RendererAdapter::setup] a [RendererAdapter].
+    ///
+    /// Can be used to delegate to one of the [AppState]-constructors.
+    fn new_from_state(
+        cc: &eframe::CreationContext<'_>,
+        constructor: impl FnOnce(&mut Errors) -> AppState,
+    ) -> Self {
         let mut errors = Errors::default();
 
+        RendererAdapter::setup(cc);
+
+        Self {
+            state: constructor(&mut errors),
+            ui: AppUI {
+                menu_bar: MenuBar::new(),
+                errors,
+            },
+            future_helper: FutureHelper::new().expect("Failed to create FutureHelper"), // This is unrecoverable
+        }
+    }
+
+    /// Create a new instance of the [App]
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        Self::new_from_state(cc, AppState::new)
+    }
+
+    /// Create a new instance of the [App] with the specified [InitOptions]
+    pub fn new_with_init(cc: &eframe::CreationContext<'_>, init_options: InitOptions<'_>) -> Self {
+        Self::new_from_state(cc, |errors| AppState::new_with_init(init_options, errors))
+    }
+
+    /// Create a new instance of the [AppState] with the specified [InitOptions]
+    /// and loading the last persisted state.
+    /// The passed [InitOptions] will overwrite any persisted options.
+    pub fn new_with_init_and_persistence(
+        cc: &eframe::CreationContext<'_>,
+        init_options: InitOptions<'_>,
+    ) -> Self {
+        Self::new_from_state(cc, |errors| {
+            AppState::new_with_init_and_persistence(Persistence::load(cc), init_options, errors)
+        })
+    }
+
+    /// Gets the [Errors]-instance of this [App],
+    /// which can be used to pipe [Error]s to.
+    pub fn errors(&mut self) -> &mut Errors {
+        &mut self.ui.errors
+    }
+}
+
+impl AppState {
+    /// Create a new instance of the [AppState].
+    /// Errors will be piped to the passed [Errors].
+    fn new(errors: &mut Errors) -> Self {
         let mut machine_repository = Repository::empty()
             .bundled_machines()
             .map_err(|e| {
@@ -55,7 +193,7 @@ impl App {
                     ConfigFormat::Machine,
                 )
             })
-            .pipe(&mut errors, Repository::empty);
+            .pipe(errors, Repository::empty);
         let mut style_repository = Repository::empty()
             .bundled_styles()
             .map_err(|e| {
@@ -64,7 +202,7 @@ impl App {
                     ConfigFormat::Style,
                 )
             })
-            .pipe(&mut errors, Repository::empty);
+            .pipe(errors, Repository::empty);
 
         // Load user-dirs only on non-web builds as there is no filesystem on web
         if !WEB {
@@ -76,7 +214,7 @@ impl App {
                         ConfigFormat::Machine,
                     )
                 })
-                .pipe(&mut errors, Repository::empty);
+                .pipe(errors, Repository::empty);
             style_repository = style_repository
                 .user_dir_styles()
                 .map_err(|e| {
@@ -85,18 +223,17 @@ impl App {
                         ConfigFormat::Machine,
                     )
                 })
-                .pipe(&mut errors, Repository::empty);
+                .pipe(errors, Repository::empty);
         }
 
         let mut app = Self {
-            future_helper: FutureHelper::new().expect("Failed to create FutureHelper"), // This is unrecoverable
-            menu_bar: MenuBar::new(),
             animator_adapter: AnimatorAdapter::default(),
             machine_repository,
             style_repository,
             current_machine: Default::default(),
-            errors,
+            current_style_id: None,
             persistence: Default::default(),
+            cache: Default::default(),
         };
 
         app.update_machines();
@@ -114,16 +251,17 @@ impl App {
         app
     }
 
-    /// Create a new instance of the [App] with the specified [InitOptions]
-    pub fn new_with_init(cc: &eframe::CreationContext<'_>, init_options: InitOptions<'_>) -> Self {
-        let mut app = Self::new(cc);
+    /// Create a new instance of the [AppState] with the specified [InitOptions].
+    /// Errors will be piped to the passed [Errors].
+    fn new_with_init(init_options: InitOptions<'_>, errors: &mut Errors) -> Self {
+        let mut app = Self::new(errors);
 
         if let Some((import_options, data)) = init_options.input {
             match import_options {
                 Some(import_options) => app.import(import_options, data).map_err(Error::Import),
                 None => app.open(data),
             }
-            .pipe_void(&mut app.errors)
+            .pipe_void(errors)
         }
 
         if let Some(machine) = init_options.machine {
@@ -131,32 +269,33 @@ impl App {
                 IdOrManual::Id(machine_id) => app.set_machine(machine_id),
                 IdOrManual::Manual(data) => app.set_machine_manually(data),
             }
-            .pipe_void(&mut app.errors)
+            .pipe_void(errors)
         }
         if let Some(style) = init_options.style {
             match style {
                 IdOrManual::Id(style_id) => app.set_style(style_id),
                 IdOrManual::Manual(data) => app.set_style_manually(data),
             }
-            .pipe_void(&mut app.errors)
+            .pipe_void(errors)
         }
 
         app
     }
 
-    /// Create a new instance of the [App] with the specified [InitOptions]
-    /// and loading the last persisted state.
-    /// The passed [InitOptions] will overwrite any persisted options.
-    pub fn new_with_init_and_persistence(
-        cc: &eframe::CreationContext<'_>,
+    /// Create a new instance of the [AppState] with the specified [InitOptions] and [Persistence].
+    /// The passed [InitOptions] will overwrite options in [Persistence].
+    /// Errors will be piped to the passed [Errors].
+    fn new_with_init_and_persistence(
+        persistence: Option<Persistence>,
         init_options: InitOptions<'_>,
+        errors: &mut Errors,
     ) -> Self {
-        if let Some(persistence) = Persistence::load(cc) {
+        if let Some(persistence) = persistence {
             let persisted: InitOptions<'_> = (&persistence).into();
-            Self::new_with_init(cc, persisted.merge(init_options))
+            Self::new_with_init(persisted.merge(init_options), errors)
         } else {
             // Nothing previously persisted
-            Self::new_with_init(cc, init_options)
+            Self::new_with_init(init_options, errors)
         }
     }
 
@@ -168,7 +307,7 @@ impl App {
     ) -> Result<(), ImportError> {
         let instructions = import_options.import(data)?;
         self.animator_adapter.set_instructions(instructions);
-        self.update_compatible_machines();
+        self.update_machines(); // update compatible machines
         Ok(())
     }
 
@@ -185,9 +324,18 @@ impl App {
         let input = naviz_parser::input::concrete::Instructions::new(input)
             .map_err(|e| Error::FileOpen(InputType::Instruction(InputError::Convert(e))))?;
         self.animator_adapter.set_instructions(input);
-        self.update_compatible_machines();
+        self.update_machines(); // update compatible machines
         self.select_compatible_machine()?;
         Ok(())
+    }
+
+    /// Opens a file by [FileType].
+    pub fn open_by_type(&mut self, file_type: FileType, data: &[u8]) -> Result<()> {
+        match file_type {
+            FileType::Instructions => self.open(data),
+            FileType::Machine => self.set_machine_manually(data),
+            FileType::Style => self.set_style_manually(data),
+        }
     }
 
     /// Selects any compatible machine for the currently opened machine.
@@ -254,7 +402,6 @@ impl App {
             .clone()
             .map(CurrentMachine::Id)
             .unwrap_or(CurrentMachine::Manual);
-        self.menu_bar.set_selected_machine(id);
         self.animator_adapter.set_machine_config(machine);
     }
 
@@ -311,7 +458,7 @@ impl App {
     /// Sets the current style to `style` with the optional `id`.
     /// If `id` is [None], the style is assumed to be set manually.
     fn set_loaded_style(&mut self, id: Option<impl Into<String>>, style: VisualConfig) {
-        self.menu_bar.set_selected_style(id.map(Into::into));
+        self.current_style_id = id.map(Into::into);
         self.animator_adapter.set_visual_config(style);
     }
 
@@ -345,132 +492,125 @@ impl App {
         Ok(())
     }
 
-    /// Update the machines displayed in the menu from the repository
-    fn update_machines(&mut self) {
-        self.menu_bar.update_machines(
-            self.machine_repository
-                .list()
-                .into_iter()
-                .map(|(id, name, removable)| (id.to_owned(), name.to_owned(), removable))
-                .collect(),
-        );
+    /// Gets the ID of the currently selected machine
+    /// or [None] if the current machine does not have an ID
+    /// (i.e., is loaded from memory).
+    pub fn get_current_machine_id(&self) -> Option<&str> {
+        self.current_machine.id()
     }
 
-    /// Update the compatible machines to be the ones specified in the currently loaded instructions
-    fn update_compatible_machines(&mut self) {
-        self.menu_bar.set_compatible_machines(
+    /// Gets the ID of the currently selected style
+    /// or [None] if the current style does not have an ID
+    /// (i.e., is loaded from memory).
+    pub fn get_current_style_id(&self) -> Option<&str> {
+        self.current_style_id.as_deref()
+    }
+
+    /// Gets the list of loaded machines.
+    /// Will be sorted by name and compatible machines will be at the top.
+    pub fn get_machines(&self) -> impl Iterator<Item = (&str, &str, bool)> {
+        self.cache.machines()
+    }
+
+    /// Gets the list of loaded styles sorted by name.
+    pub fn get_styles(&self) -> impl Iterator<Item = (&str, &str, bool)> {
+        self.cache.styles()
+    }
+
+    /// Imports a machine to the repository by the specified `path`.
+    /// The id will be set to the file name.
+    /// See [Repository::import_machine_to_user_dir].
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn import_machine(&mut self, path: &Path) -> Result<()> {
+        self.machine_repository
+            .import_machine_to_user_dir(path)
+            .map_err(|e| Error::Repository(RepositoryError::Import(e), ConfigFormat::Machine))?;
+        self.update_machines();
+        Ok(())
+    }
+
+    /// Imports a style to the repository by the specified `path`.
+    /// The id will be set to the file name.
+    /// See [Repository::import_style_to_user_dir].
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn import_style(&mut self, path: &Path) -> Result<()> {
+        self.style_repository
+            .import_style_to_user_dir(path)
+            .map_err(|e| Error::Repository(RepositoryError::Import(e), ConfigFormat::Style))?;
+        self.update_styles();
+        Ok(())
+    }
+
+    /// Removes an imported machine from the repository.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn remove_machine(&mut self, id: &str) -> Result<()> {
+        self.machine_repository
+            .remove_from_user_dir(id)
+            .map_err(|e| Error::Repository(RepositoryError::Remove(e), ConfigFormat::Machine))?;
+        self.update_machines();
+        Ok(())
+    }
+
+    /// Removes an imported style from the repository.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn remove_style(&mut self, id: &str) -> Result<()> {
+        self.style_repository
+            .remove_from_user_dir(id)
+            .map_err(|e| Error::Repository(RepositoryError::Remove(e), ConfigFormat::Style))?;
+        self.update_styles();
+        Ok(())
+    }
+
+    /// Starts an export of the visualization to the specified `target`-path
+    /// with the specified `resolution` and `fps`.
+    /// Updates will be sent over the `progress`-channel.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn export(
+        &self,
+        target: PathBuf,
+        resolution: (u32, u32),
+        fps: u32,
+        progress: Sender<VideoProgress>,
+    ) {
+        if let Some(animator) = self.animator_adapter.animator() {
+            let video = VideoExport::new(animator, resolution, fps);
+            thread::spawn(move || {
+                let mut video = futures::executor::block_on(video);
+                video.export_video(&target, progress);
+            });
+        }
+    }
+
+    /// Updates the cached list of machines
+    fn update_machines(&mut self) {
+        self.cache.update_machines(
+            &self.machine_repository,
             self.animator_adapter
                 .get_instructions()
-                .map(|x| x.directives.targets.as_slice())
+                .map(|i| i.directives.targets.as_slice())
                 .unwrap_or(&[]),
         );
     }
 
-    /// Update the styles displayed in the menu from the repository
+    /// Updates the cached list of styles
     fn update_styles(&mut self) {
-        self.menu_bar.update_styles(
-            self.style_repository
-                .list()
-                .into_iter()
-                .map(|(id, name, removable)| (id.to_owned(), name.to_owned(), removable))
-                .collect(),
-        );
+        self.cache.update_styles(&self.style_repository);
+    }
+
+    /// Returns whether a visualization is currently loaded:
+    /// Some machine and style is selected and some instructions are loaded.
+    pub fn visualization_loaded(&self) -> bool {
+        self.animator_adapter.all_inputs_set()
     }
 }
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Check if a new file was read
-        if let Ok(event) = self.menu_bar.events().try_recv() {
-            match event {
-                MenuEvent::FileOpen(FileType::Instructions, content) => {
-                    self.open(&content).pipe_void(&mut self.errors);
-                }
-                MenuEvent::FileImport(options, content) => {
-                    self.import(options, &content)
-                        .map_err(Error::Import)
-                        .pipe_void(&mut self.errors);
-                }
-                MenuEvent::FileOpen(FileType::Machine, content) => {
-                    self.set_machine_manually(&content)
-                        .pipe_void(&mut self.errors);
-                }
-                MenuEvent::FileOpen(FileType::Style, content) => {
-                    self.set_style_manually(&content)
-                        .pipe_void(&mut self.errors);
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                MenuEvent::ExportVideo {
-                    target,
-                    resolution,
-                    fps,
-                    progress,
-                } => {
-                    if let Some(animator) = self.animator_adapter.animator() {
-                        let video = VideoExport::new(animator, resolution, fps);
-                        let (tx, rx) = channel();
-                        self.future_helper.execute_to(video, tx);
-                        thread::spawn(move || {
-                            let mut video = rx.recv().unwrap();
-                            video.export_video(&target, progress);
-                        });
-                    }
-                }
-                MenuEvent::SetMachine(id) => {
-                    self.set_machine(id).pipe_void(&mut self.errors);
-                }
-                MenuEvent::SetStyle(id) => {
-                    self.set_style(id).pipe_void(&mut self.errors);
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                MenuEvent::ImportMachine(file) => {
-                    self.machine_repository
-                        .import_machine_to_user_dir(&file)
-                        .map_err(|e| {
-                            Error::Repository(RepositoryError::Import(e), ConfigFormat::Machine)
-                        })
-                        .pipe_void(&mut self.errors);
-                    self.update_machines();
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                MenuEvent::ImportStyle(file) => {
-                    self.style_repository
-                        .import_style_to_user_dir(&file)
-                        .map_err(|e| {
-                            Error::Repository(RepositoryError::Import(e), ConfigFormat::Style)
-                        })
-                        .pipe_void(&mut self.errors);
-                    self.update_styles();
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                MenuEvent::RemoveMachine(id) => {
-                    self.machine_repository
-                        .remove_from_user_dir(&id)
-                        .map_err(|e| {
-                            Error::Repository(RepositoryError::Remove(e), ConfigFormat::Machine)
-                        })
-                        .pipe_void(&mut self.errors);
-                    self.update_machines();
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                MenuEvent::RemoveStyle(id) => {
-                    self.style_repository
-                        .remove_from_user_dir(&id)
-                        .map_err(|e| {
-                            Error::Repository(RepositoryError::Remove(e), ConfigFormat::Style)
-                        })
-                        .pipe_void(&mut self.errors);
-                    self.update_styles();
-                }
-            }
-        }
-
         // Menu
         egui::TopBottomPanel::top("app_menu").show(ctx, |ui| {
-            self.menu_bar.draw(
-                MenuConfig {
-                    export: self.animator_adapter.all_inputs_set(),
-                },
+            self.ui.menu_bar.draw(
+                &mut self.state,
+                &mut self.ui.errors,
                 &self.future_helper,
                 ctx,
                 ui,
@@ -510,7 +650,7 @@ impl eframe::App for App {
             );
         });
 
-        self.errors.draw(ctx);
+        self.ui.errors.draw(ctx);
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {

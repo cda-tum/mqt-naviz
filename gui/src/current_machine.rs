@@ -25,4 +25,12 @@ impl CurrentMachine {
             Self::Id(id) => compatible_machines.contains(id),
         }
     }
+
+    /// Gets the `id`` of this [CurrentMachine] if it is set to [CurrentMachine::Id].
+    pub fn id(&self) -> Option<&str> {
+        match self {
+            Self::Id(id) => Some(id),
+            _ => None,
+        }
+    }
 }

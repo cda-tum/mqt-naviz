@@ -14,12 +14,14 @@ use wgpu::{
 
 use crate::{
     buffer_updater::BufferUpdater,
+    component::drawable::Drawable,
     globals::Globals,
     shaders::compile_shader,
     viewport::{Viewport, ViewportProjection},
 };
 
 pub mod atoms;
+pub mod drawable;
 pub mod legend;
 pub mod machine;
 pub mod primitive;
@@ -199,5 +201,17 @@ impl<Spec: bytemuck::NoUninit> Component<Spec> {
         render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
         render_pass.set_bind_group(2, &self.bind_group, &[]);
         render_pass.draw(0..6, 0..self.instance_count);
+    }
+}
+
+impl<Spec: bytemuck::NoUninit> Drawable for Component<Spec> {
+    #[inline]
+    fn draw<const REBIND: bool>(
+        &self,
+        render_pass: &mut RenderPass<'_>,
+        _rebind: impl Fn(&mut RenderPass),
+    ) {
+        // no bindings are changed, therefore we never need to rebind
+        self.draw(render_pass);
     }
 }

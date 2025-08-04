@@ -14,12 +14,14 @@ use egui::{Align, Align2, Button, Grid, Id, Layout, ScrollArea, Window};
 use export::ExportMenu;
 use git_version::git_version;
 use naviz_import::{ImportFormat, ImportOptions, IMPORT_FORMATS};
-#[cfg(not(target_arch = "wasm32"))]
-use naviz_video::VideoProgress;
 use rfd::FileHandle;
 
 use crate::{
+    app::AppState,
     drawable::Drawable,
+    error::{Error, Result},
+    errors::{ErrorEmitter, Errors},
+    file_type::{FileFilter, FileType},
     future_helper::{FutureHelper, SendFuture},
     util::WEB,
 };
@@ -28,19 +30,12 @@ type SendReceivePair<T> = (Sender<T>, Receiver<T>);
 
 /// The menu bar struct which contains the state of the menu
 pub struct MenuBar {
+    /// Internal channel for async events
     event_channel: SendReceivePair<MenuEvent>,
     /// Whether to draw the about-window
     about_open: bool,
     /// Export interaction handling (menu, config, progress)
     export_menu: ExportMenu,
-    /// List of machines: `(id, name, removable)`
-    machines: Vec<(String, String, bool)>,
-    /// List of styles: `(id, name, removable)`
-    styles: Vec<(String, String, bool)>,
-    /// The currently selected machine
-    selected_machine: Option<String>,
-    /// The currently selected style
-    selected_style: Option<String>,
     /// Options to display for the current import (as started by the user).
     /// Also optionally contains a file if importing first opened a file
     /// (e.g., by dropping it onto the application).
@@ -48,38 +43,18 @@ pub struct MenuBar {
     current_import_options: Option<(ImportOptions, Option<Arc<[u8]>>)>,
 }
 
-/// An event which is triggered on menu navigation.
-/// Higher-Level than just button-clicks.
-pub enum MenuEvent {
+/// An event which can be triggered by asynchronous actions like the user choosing a file
+enum MenuEvent {
     /// A file of the specified [FileType] with the specified content was opened
     FileOpen(FileType, Arc<[u8]>),
     /// A file should be imported
     FileImport(ImportOptions, Arc<[u8]>),
-    /// A video should be exported to the specified path with the specified resolution and fps
-    #[cfg(not(target_arch = "wasm32"))]
-    ExportVideo {
-        target: PathBuf,
-        resolution: (u32, u32),
-        fps: u32,
-        /// Channel for progress updates
-        progress: Sender<VideoProgress>,
-    },
-    /// A new machine with the specified `id` was selected
-    SetMachine(String),
-    /// A new style with the specified `id` was selected
-    SetStyle(String),
     /// The machine at the specified `path` should be imported
     #[cfg(not(target_arch = "wasm32"))]
     ImportMachine(PathBuf),
     /// The style at the specified `path` should be imported
     #[cfg(not(target_arch = "wasm32"))]
     ImportStyle(PathBuf),
-    /// The machine with the specified `id` should be removed
-    #[cfg(not(target_arch = "wasm32"))]
-    RemoveMachine(String),
-    /// The style with the specified `id` should be removed
-    #[cfg(not(target_arch = "wasm32"))]
-    RemoveStyle(String),
 }
 
 impl MenuEvent {
@@ -99,45 +74,6 @@ impl MenuEvent {
     }
 }
 
-/// The available FileTypes for opening
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FileType {
-    Instructions,
-    Machine,
-    Style,
-}
-
-/// Something which can be used to filter files by extension
-pub trait FileFilter {
-    /// The name of this filter
-    fn name(&self) -> &str;
-    /// Allowed extensions
-    fn extensions(&self) -> &[&str];
-}
-
-/// Config options for what to show inside the menu
-pub struct MenuConfig {
-    /// Show export option
-    pub export: bool,
-}
-
-impl FileFilter for FileType {
-    fn name(&self) -> &'static str {
-        match self {
-            FileType::Instructions => "NAViz instructions",
-            FileType::Machine => "NAViz machine",
-            FileType::Style => "NAViz style",
-        }
-    }
-    fn extensions(&self) -> &'static [&'static str] {
-        match self {
-            FileType::Instructions => &["naviz"],
-            FileType::Machine => &["namachine"],
-            FileType::Style => &["nastyle"],
-        }
-    }
-}
-
 impl MenuBar {
     /// Create a new [MenuBar]
     pub fn new() -> Self {
@@ -145,66 +81,20 @@ impl MenuBar {
             event_channel: channel(),
             about_open: false,
             export_menu: ExportMenu::new(),
-            machines: vec![],
-            styles: vec![],
-            selected_machine: None,
-            selected_style: None,
             current_import_options: None,
         }
-    }
-
-    /// Update the machine-list.
-    /// Machines are `(id, name, removable)`.
-    pub fn update_machines(&mut self, machines: Vec<(String, String, bool)>) {
-        self.machines = machines;
-        self.machines.sort_by(|(_, a, _), (_, b, _)| a.cmp(b));
-    }
-
-    /// Move the compatible machines to the top of the list
-    pub fn set_compatible_machines(&mut self, machines: &[String]) {
-        // Sort by containment in machines, then by name
-        self.machines
-            .sort_by(|(id_a, name_a, _), (id_b, name_b, _)| {
-                machines
-                    .contains(id_a)
-                    .cmp(&machines.contains(id_b))
-                    .reverse()
-                    .then_with(|| name_a.cmp(name_b))
-            });
-    }
-
-    /// Sets the currently selected machine to the passed id.
-    /// Used to display feedback in the selection.
-    pub fn set_selected_machine(&mut self, selected_machine: Option<String>) {
-        self.selected_machine = selected_machine;
-    }
-
-    /// Update the style-list.
-    /// Styles are `(id, name, removable)`.
-    pub fn update_styles(&mut self, styles: Vec<(String, String, bool)>) {
-        self.styles = styles;
-        self.styles.sort_by(|(_, a, _), (_, b, _)| a.cmp(b));
-    }
-
-    /// Sets the currently selected style to the passed id.
-    /// Used to display feedback in the selection.
-    pub fn set_selected_style(&mut self, selected_style: Option<String>) {
-        self.selected_style = selected_style;
-    }
-
-    /// Get the file open channel.
-    ///
-    /// Whenever a new file is opened,
-    /// its content will be sent over this channel.
-    pub fn events(&self) -> &Receiver<MenuEvent> {
-        &self.event_channel.1
     }
 
     /// Loads a file while deducing its type by its extension.
     /// Handles the file-types defined in [FileType]
     /// and file-types defined in [IMPORT_FORMATS].
     /// Extension-collisions will simply pick the first match.
-    fn load_file_by_extension(&mut self, name: &str, contents: Arc<[u8]>) {
+    fn load_file_by_extension(
+        &mut self,
+        name: &str,
+        contents: Arc<[u8]>,
+        state: &mut AppState,
+    ) -> Result<()> {
         // Extract extension
         if let Some(extension) = Path::new(name).extension() {
             let extension = &*extension.to_string_lossy();
@@ -213,11 +103,7 @@ impl MenuBar {
             for file_type in [FileType::Instructions, FileType::Machine, FileType::Style] {
                 // File extension is known?
                 if file_type.extensions().contains(&extension) {
-                    let _ = self
-                        .event_channel
-                        .0
-                        .send(MenuEvent::FileOpen(file_type, contents));
-                    return;
+                    return state.open_by_type(file_type, &contents);
                 }
             }
 
@@ -225,21 +111,25 @@ impl MenuBar {
             for import_format in IMPORT_FORMATS {
                 // File extension is known by some import-format?
                 if import_format.file_extensions().contains(&extension) {
+                    // Set current import options to show dialog
                     self.current_import_options = Some((import_format.into(), Some(contents)));
-                    return;
+                    return Ok(());
                 }
             }
         }
+
+        Ok(())
     }
 
     /// Handles any files dropped onto the application.
     /// Will use [Self::load_file_by_extension] to load the file.
-    fn handle_file_drop(&mut self, ctx: &egui::Context) {
+    fn handle_file_drop(&mut self, ctx: &egui::Context, state: &mut AppState) -> Result<()> {
         for file in ctx.input_mut(|input| std::mem::take(&mut input.raw.dropped_files)) {
             if let Some(contents) = file.bytes {
-                self.load_file_by_extension(&file.name, contents);
+                self.load_file_by_extension(&file.name, contents, state)?;
             }
         }
+        Ok(())
     }
 
     /// Handles any pastes into the application.
@@ -247,7 +137,7 @@ impl MenuBar {
     /// and use [Self::load_file_by_extension] to load the file.
     /// If text was pasted,
     /// will load that text as instructions.
-    fn handle_clipboard(&mut self, ctx: &egui::Context) {
+    fn handle_clipboard(&mut self, ctx: &egui::Context, state: &mut AppState, errors: &mut Errors) {
         if ctx.wants_keyboard_input() {
             // some widgets is listening for keyboard input,
             // therefore it also consumes paste events.
@@ -267,16 +157,14 @@ impl MenuBar {
                         // A file exists at that path
                         #[allow(clippy::needless_borrows_for_generic_args)] // borrow is needed
                         if let Ok(contents) = std::fs::read(&text) {
-                            self.load_file_by_extension(text, contents.into());
+                            self.load_file_by_extension(text, contents.into(), state)
+                                .pipe_void(errors);
                         } else {
                             log::error!("Failed to read file");
                         }
                     } else {
                         // Pasted text-content directly
-                        let _ = self.event_channel.0.send(MenuEvent::FileOpen(
-                            FileType::Instructions,
-                            std::mem::take(text).into_bytes().into(),
-                        ));
+                        state.open(text.as_bytes()).pipe_void(errors);
                     }
                     false // event was handled => drop
                 } else {
@@ -286,21 +174,44 @@ impl MenuBar {
         });
     }
 
-    /// Draw the [MenuBar]
+    /// Processes all events from the [event_channel][MenuBar::event_channel].
+    fn process_events(&mut self, state: &mut AppState, errors: &mut Errors) {
+        while let Ok(event) = self.event_channel.1.try_recv() {
+            match event {
+                MenuEvent::FileOpen(file_type, data) => state.open_by_type(file_type, &data),
+                MenuEvent::FileImport(import_options, data) => {
+                    state.import(import_options, &data).map_err(Error::Import)
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                MenuEvent::ImportMachine(path) => state.import_machine(&path),
+                #[cfg(not(target_arch = "wasm32"))]
+                MenuEvent::ImportStyle(path) => state.import_style(&path),
+            }
+            .pipe_void(errors);
+        }
+    }
+
+    /// Draw the [MenuBar].
+    /// State will be taken from the [AppState]
+    /// and any interactions with the menu will update the [AppState].
     pub fn draw(
         &mut self,
-        config: MenuConfig,
+        state: &mut AppState,
+        errors: &mut Errors,
         future_helper: &FutureHelper,
         ctx: &egui::Context,
         ui: &mut egui::Ui,
     ) {
-        self.export_menu.process_events(&mut self.event_channel.0);
+        self.process_events(state, errors);
 
-        self.show_import_dialog(future_helper, ctx);
+        self.export_menu.process_events(state);
 
-        self.handle_file_drop(ctx);
+        self.show_import_dialog(state, future_helper, ctx)
+            .pipe_void(errors);
 
-        self.handle_clipboard(ctx);
+        self.handle_file_drop(ctx, state).pipe_void(errors);
+
+        self.handle_clipboard(ctx, state, errors);
 
         egui::menu::bar(ui, |ui| {
             ui.menu_button("File", |ui| {
@@ -318,7 +229,8 @@ impl MenuBar {
                     }
                 });
 
-                self.export_menu.draw_button(config.export, ui);
+                self.export_menu
+                    .draw_button(state.visualization_loaded(), ui);
 
                 if !WEB {
                     // Quit-button only on native
@@ -331,10 +243,10 @@ impl MenuBar {
             });
 
             // Machine selection
-            SelectionMenu::machines(self).draw(ui, future_helper, self);
+            selection_menu::draw::<selection_menu::Machine>(state, ui, future_helper, self, errors);
 
             // Style selection
-            SelectionMenu::styles(self).draw(ui, future_helper, self);
+            selection_menu::draw::<selection_menu::Style>(state, ui, future_helper, self, errors);
 
             ui.menu_button("Help", |ui| {
                 if ui.button("About").clicked() {
@@ -349,8 +261,14 @@ impl MenuBar {
         self.draw_about_window(ctx);
     }
 
-    /// Show the import dialog if [MenuBar::current_import_options] is `Some`.
-    fn show_import_dialog(&mut self, future_helper: &FutureHelper, ctx: &egui::Context) {
+    /// Show the import dialog if [MenuBar::current_import_options] is `Some`
+    /// and update the [AppState] if the import should be performed.
+    fn show_import_dialog(
+        &mut self,
+        state: &mut AppState,
+        future_helper: &FutureHelper,
+        ctx: &egui::Context,
+    ) -> Result<()> {
         if let Some((current_import_options, _)) = self.current_import_options.as_mut() {
             let mut open = true; // window open?
             let mut do_import = false; // ok button clicked?
@@ -370,10 +288,7 @@ impl MenuBar {
                 let (options, import_file) = self.current_import_options.take().unwrap(); // Can unwrap because we are inside of `if let Some`
                 if let Some(import_file) = import_file {
                     // An import-file was already opened => import that file
-                    let _ = self
-                        .event_channel
-                        .0
-                        .send(MenuEvent::FileImport(options, import_file));
+                    state.import(options, &import_file).map_err(Error::Import)?;
                 } else {
                     // No import-file opened => LEt user choose file
                     self.choose_file(
@@ -390,6 +305,8 @@ impl MenuBar {
                 self.current_import_options = None;
             }
         }
+
+        Ok(())
     }
 
     /// Show the file-choosing dialog and read the file if a new file was selected
@@ -457,87 +374,110 @@ impl MenuBar {
     }
 }
 
-/// Top menu allowing to select styles or machines.
-/// Use [SelectionMenu::machines] or [SelectionMenu::styles] to get the respective menus
-/// and [SelectionMenu::draw] to draw the menus.
-struct SelectionMenu<
-    'a,
-    SET: Fn(String) -> MenuEvent + Copy,
-    REMOVE: Fn(String) -> MenuEvent + Copy,
-> {
-    /// Name of the button
-    name: &'static str,
-    /// [FileType] this menu is for
-    file_type: FileType,
-    /// [MenuEvent] to fire when the machine should be set
-    set_event: SET,
-    /// [MenuEvent] to fire when the machine should be removed
-    remove_event: REMOVE,
-    /// Items to display: `(id, name, removable)`
-    items: &'a [(String, String, bool)],
-    /// Which id is currently selected
-    selected: &'a Option<String>,
-}
+mod selection_menu {
+    //! Module containing the top-menus for selecting styles or machines.
+    //! The [Menu]-trait specifies what should be displayed and how updates should be handled.
+    //! The menu can be drawn by passing one such struct to [draw].
 
-impl<'a> SelectionMenu<'a, fn(String) -> MenuEvent, fn(String) -> MenuEvent> {
-    /// Create a new [SelectionMenu] that allows selecting the [MenuBar]'s machines.
-    #[inline(always)]
-    fn machines(menu_bar: &'a MenuBar) -> Self {
-        Self {
-            name: "Machines",
-            file_type: FileType::Machine,
-            set_event: MenuEvent::SetMachine,
-            #[cfg(not(target_arch = "wasm32"))]
-            remove_event: MenuEvent::RemoveMachine,
-            #[cfg(target_arch = "wasm32")]
-            remove_event: |_| unreachable!("No imported configs on web"),
-            items: &menu_bar.machines,
-            selected: &menu_bar.selected_machine,
+    use super::*;
+
+    /// Something that can be displayed as a selection-menu.
+    /// Specifies how data can be retrieved and updated.
+    pub trait Menu {
+        const NAME: &str;
+        const FILE_TYPE: FileType;
+        fn set(state: &mut AppState, id: &str) -> Result<()>;
+        fn remove(state: &mut AppState, id: &str) -> Result<()>;
+        fn items(state: &AppState) -> impl Iterator<Item = (&str, &str, bool)>;
+        fn selected(state: &AppState) -> Option<&str>;
+    }
+
+    /// Selection-menu for the machines.
+    pub struct Machine;
+    impl Menu for Machine {
+        const NAME: &str = "Machines";
+        const FILE_TYPE: FileType = FileType::Machine;
+        fn set(state: &mut AppState, id: &str) -> Result<()> {
+            state.set_machine(id)
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        fn remove(state: &mut AppState, id: &str) -> Result<()> {
+            state.remove_machine(id)
+        }
+        #[cfg(target_arch = "wasm32")]
+        fn remove(_state: &mut AppState, _id: &str) -> Result<()> {
+            unimplemented!("Cannot remove machines in web")
+        }
+        fn items(state: &AppState) -> impl Iterator<Item = (&str, &str, bool)> {
+            state.get_machines()
+        }
+        fn selected(state: &AppState) -> Option<&str> {
+            state.get_current_machine_id()
         }
     }
 
-    /// Create a new [SelectionMenu] that allows selecting the [MenuBar]'s styles.
-    #[inline(always)]
-    fn styles(menu_bar: &'a MenuBar) -> Self {
-        SelectionMenu {
-            name: "Styles",
-            file_type: FileType::Style,
-            set_event: MenuEvent::SetStyle,
-            #[cfg(not(target_arch = "wasm32"))]
-            remove_event: MenuEvent::RemoveStyle,
-            #[cfg(target_arch = "wasm32")]
-            remove_event: |_| unreachable!("No imported configs on web"),
-            items: &menu_bar.styles,
-            selected: &menu_bar.selected_style,
+    /// Selection-menu for the styles.
+    pub struct Style;
+    impl Menu for Style {
+        const NAME: &str = "Styles";
+        const FILE_TYPE: FileType = FileType::Style;
+        fn set(state: &mut AppState, id: &str) -> Result<()> {
+            state.set_style(id)
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        fn remove(state: &mut AppState, id: &str) -> Result<()> {
+            state.remove_style(id)
+        }
+        #[cfg(target_arch = "wasm32")]
+        fn remove(_state: &mut AppState, _id: &str) -> Result<()> {
+            unimplemented!("Cannot remove styles in web")
+        }
+        fn items(state: &AppState) -> impl Iterator<Item = (&str, &str, bool)> {
+            state.get_styles()
+        }
+        fn selected(state: &AppState) -> Option<&str> {
+            state.get_current_style_id()
         }
     }
-}
 
-impl<SET: Fn(String) -> MenuEvent + Copy, REMOVE: Fn(String) -> MenuEvent + Copy>
-    SelectionMenu<'_, SET, REMOVE>
-{
-    /// Draws this [SelectionMenu] to the passed [Ui][egui::Ui],
+    /// Draws a selection-menu to the passed [Ui][egui::Ui],
     /// reacting to events by calling the functions of [MenuBar]
-    /// or sending events through its channel.
+    /// or updating [AppState] directly.
+    ///
+    /// The [Menu] to display can be selected by specifying the generic parameter.
     #[inline(always)]
-    fn draw(&self, ui: &mut egui::Ui, future_helper: &FutureHelper, menu_bar: &MenuBar) {
-        let &Self {
-            name,
-            file_type,
-            set_event,
-            remove_event,
-            items,
-            selected,
-        } = self;
+    pub fn draw<M: Menu>(
+        state: &mut AppState,
+        ui: &mut egui::Ui,
+        future_helper: &FutureHelper,
+        menu_bar: &MenuBar,
+        errors: &mut Errors,
+    ) {
+        let selected = M::selected(state).map(ToString::to_string);
 
-        ui.menu_button(name, |ui| {
+        /// Action to take.
+        /// Required to collect all actions while iterating.
+        enum Action {
+            Set(String),
+            Remove(String),
+        }
+        impl Action {
+            pub fn execute<M: Menu>(self, state: &mut AppState) -> Result<()> {
+                match self {
+                    Action::Set(id) => M::set(state, &id),
+                    Action::Remove(id) => M::remove(state, &id),
+                }
+            }
+        }
+
+        ui.menu_button(M::NAME, |ui| {
             if ui.button("Open").clicked() {
-                menu_bar.choose_file(file_type, future_helper, MenuEvent::file_open);
+                menu_bar.choose_file(M::FILE_TYPE, future_helper, MenuEvent::file_open);
                 ui.close_menu();
             }
             #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Import").clicked() {
-                menu_bar.choose_file(file_type, future_helper, MenuEvent::file_import);
+                menu_bar.choose_file(M::FILE_TYPE, future_helper, MenuEvent::file_import);
                 ui.close_menu();
             }
 
@@ -547,9 +487,9 @@ impl<SET: Fn(String) -> MenuEvent + Copy, REMOVE: Fn(String) -> MenuEvent + Copy
                 // Store previous widths to layout
 
                 // IDs
-                let delete_width_id = Id::new(format!("menu.{name}.width#delete"));
-                let full_width_id = Id::new(format!("menu.{name}.width#full"));
-                let hovered_index_id = Id::new(format!("menu.{name}.width#hovered"));
+                let delete_width_id = Id::new(format!("menu.{}.width#delete", M::NAME));
+                let full_width_id = Id::new(format!("menu.{}.width#full", M::NAME));
+                let hovered_index_id = Id::new(format!("menu.{}.width#hovered", M::NAME));
 
                 // Values
                 // Width of delete button
@@ -566,52 +506,66 @@ impl<SET: Fn(String) -> MenuEvent + Copy, REMOVE: Fn(String) -> MenuEvent + Copy
                 // New `delete_width`
                 let mut delete_width_ = None;
 
-                for (idx, (id, name, removable)) in items.iter().enumerate() {
-                    ui.horizontal(|ui| {
-                        let show_delete_button = *removable && hovered == Some(idx);
+                M::items(state)
+                    .enumerate()
+                    .flat_map(|(idx, (id, name, removable))| {
+                        ui.horizontal(|ui| {
+                            // List of actions to take for this entry
+                            let mut actions = Vec::new();
 
-                        // Width for the main button
-                        let button_width = if show_delete_button {
-                            full_width - delete_width
-                        } else {
-                            full_width
-                        };
+                            let show_delete_button = removable && hovered == Some(idx);
 
-                        // Render select button
-                        let select_button = ui
-                            .with_layout(
-                                Layout::left_to_right(Align::Center).with_main_align(Align::Min),
-                                |ui| {
-                                    ui.add(
-                                        Button::new(name)
-                                            .selected(selected.as_ref() == Some(id))
-                                            .min_size([button_width, 0.].into()),
-                                    )
-                                },
-                            )
-                            .inner;
-                        if select_button.clicked() {
-                            let _ = menu_bar.event_channel.0.send(set_event(id.clone()));
-                            ui.close_menu();
-                        }
+                            // Width for the main button
+                            let button_width = if show_delete_button {
+                                full_width - delete_width
+                            } else {
+                                full_width
+                            };
 
-                        // Render delete button
-                        if show_delete_button {
-                            let delete_button =
-                                ui.centered_and_justified(|ui| ui.button("\u{1F5D1}")).inner;
-                            if delete_button.clicked() {
-                                let _ = menu_bar.event_channel.0.send(remove_event(id.clone()));
+                            // Render select button
+                            let select_button = ui
+                                .with_layout(
+                                    Layout::left_to_right(Align::Center)
+                                        .with_main_align(Align::Min),
+                                    |ui| {
+                                        ui.add(
+                                            Button::new(name)
+                                                .selected(selected.as_deref() == Some(id))
+                                                .min_size([button_width, 0.].into()),
+                                        )
+                                    },
+                                )
+                                .inner;
+                            if select_button.clicked() {
+                                actions.push(Action::Set(id.to_string()));
+                                ui.close_menu();
                             }
-                            delete_width_ =
-                                Some(delete_button.rect.right() - select_button.rect.right());
-                        }
 
-                        // Check if current entry is hovered
-                        if ui.ui_contains_pointer() {
-                            ui.data_mut(|data| data.insert_temp(hovered_index_id, idx));
-                        }
-                    });
-                }
+                            // Render delete button
+                            if show_delete_button {
+                                let delete_button =
+                                    ui.centered_and_justified(|ui| ui.button("\u{1F5D1}")).inner;
+                                if delete_button.clicked() {
+                                    actions.push(Action::Remove(id.to_string()));
+                                }
+                                delete_width_ =
+                                    Some(delete_button.rect.right() - select_button.rect.right());
+                            }
+
+                            // Check if current entry is hovered
+                            if ui.ui_contains_pointer() {
+                                ui.data_mut(|data| data.insert_temp(hovered_index_id, idx));
+                            }
+
+                            actions
+                        })
+                        .inner
+                    })
+                    // First collect all actions and then act due to lifetime-issues when trying
+                    // to use `state` inside the closure.
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .for_each(|a| a.execute::<M>(state).pipe_void(errors));
 
                 // Cursor not over current ui => no element hovered
                 if !ui.ui_contains_pointer() {
@@ -660,19 +614,17 @@ const VERSION: &str = {
 pub mod export {
     //! Export-Menu on native
 
-    use std::{
-        path::PathBuf,
-        sync::mpsc::{channel, Sender},
-    };
+    use std::{path::PathBuf, sync::mpsc::channel};
 
     use egui::{Button, Context};
 
     use crate::{
+        app::AppState,
         export_dialog::{ExportProgresses, ExportSettings},
         future_helper::FutureHelper,
     };
 
-    use super::{MenuEvent, SendReceivePair};
+    use super::SendReceivePair;
 
     /// Menu components concerning export
     pub struct ExportMenu {
@@ -695,14 +647,9 @@ pub mod export {
         }
 
         /// Processes events concerning export
-        pub fn process_events(&mut self, menu_event_sender: &mut Sender<MenuEvent>) {
+        pub fn process_events(&mut self, state: &mut AppState) {
             if let Ok((target, resolution, fps)) = self.export_channel.1.try_recv() {
-                let _ = menu_event_sender.send(MenuEvent::ExportVideo {
-                    target,
-                    resolution,
-                    fps,
-                    progress: self.export_progresses.add(),
-                });
+                state.export(target, resolution, fps, self.export_progresses.add());
             }
         }
 
@@ -751,13 +698,9 @@ pub mod export {
     //! Signatures should match the export-module on native.
     //! See that module for documentation.
 
-    use std::sync::mpsc::Sender;
-
     use egui::Context;
 
-    use crate::future_helper::FutureHelper;
-
-    use super::MenuEvent;
+    use crate::{app::AppState, future_helper::FutureHelper};
 
     pub struct ExportMenu {}
 
@@ -766,7 +709,7 @@ pub mod export {
             Self {}
         }
 
-        pub fn process_events(&mut self, _menu_event_sender: &mut Sender<MenuEvent>) {}
+        pub fn process_events(&mut self, _state: &mut AppState) {}
 
         pub fn draw_button(&mut self, _enabled: bool, _ui: &mut egui::Ui) {}
 
