@@ -602,6 +602,17 @@ impl AppState {
     pub fn visualization_loaded(&self) -> bool {
         self.animator_adapter.all_inputs_set()
     }
+
+    /// Whether to force the zen-mode.
+    /// See [Renderer::set_force_zen].
+    pub fn set_force_zen(&mut self, force_zen: bool) {
+        self.animator_adapter.set_force_zen(force_zen);
+    }
+
+    /// Gets whether the zen-mode is currently forced as set by [AppState::set_force_zen]
+    pub fn get_force_zen(&mut self) -> bool {
+        self.animator_adapter.get_force_zen()
+    }
 }
 
 impl eframe::App for App {

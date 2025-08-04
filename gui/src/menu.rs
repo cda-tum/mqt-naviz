@@ -248,6 +248,15 @@ impl MenuBar {
             // Style selection
             selection_menu::draw::<selection_menu::Style>(state, ui, future_helper, self, errors);
 
+            // View-menu
+            ui.menu_button("View", |ui| {
+                // Zen-overwrite
+                let mut force_zen = state.get_force_zen();
+                if ui.checkbox(&mut force_zen, "Zen-Mode").changed() {
+                    state.set_force_zen(force_zen);
+                }
+            });
+
             ui.menu_button("Help", |ui| {
                 if ui.button("About").clicked() {
                     self.about_open = true;
