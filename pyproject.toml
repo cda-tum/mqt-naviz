@@ -36,6 +36,20 @@ Discussions = "https://github.com/cda-tum/mqt-naviz/discussions"
 [tool.maturin]
 features = ["pyo3/extension-module"]
 manifest-path = "python/Cargo.toml"
+include = ["**/*"]
+exclude = [
+    ".github/**/*",
+    "doc/**/*",
+    "docs/**/*",
+    "test/**/*",
+]
+
+[tool.check-sdist]
+git-only = [
+    "doc/*",
+    "docs/*",
+    "test/*",
+]
 
 
 [tool.mypy]
@@ -115,8 +129,6 @@ mqt-naviz = { workspace = true }
 
 [tool.repo-review]
 ignore = [
-    "GH102", # We do not have workflow with auto cancel yet
-    "GH103", # We do not have workflow with manual dispatch yet
     "GH200", # We do not have a .github/dependabot.yml file because we use renovate for dependency management
 ]
 
