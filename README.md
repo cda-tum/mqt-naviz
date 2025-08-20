@@ -1,9 +1,6 @@
-<!-- [![PyPI](https://img.shields.io/pypi/v/mqt.naviz?logo=pypi&style=flat-square)](https://pypi.org/project/mqt.naviz/) -->
 <!-- ![OS](https://img.shields.io/badge/os-linux%20%7C%20macos%20%7C%20windows-blue?style=flat-square) -->
-<!-- [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT) -->
-<!-- [![CI](https://img.shields.io/github/actions/workflow/status/cda-tum/mqt-naviz/ci.yml?branch=main&style=flat-square&logo=github&label=ci)](https://github.com/cda-tum/mqt-naviz/actions/workflows/ci.yml) -->
-<!-- [![CD](https://img.shields.io/github/actions/workflow/status/cda-tum/mqt-naviz/cd.yml?style=flat-square&logo=github&label=cd)](https://github.com/cda-tum/mqt-naviz/actions/workflows/cd.yml) -->
 
+[![PyPI](https://img.shields.io/pypi/v/mqt.naviz?logo=pypi&style=flat-square)](https://pypi.org/project/mqt.naviz/)
 [![Documentation](https://img.shields.io/readthedocs/mqt-naviz?logo=readthedocs&style=flat-square)](https://mqt.readthedocs.io/projects/naviz)
 
 <p align="center">
@@ -56,6 +53,16 @@ Thank you to all the contributors who have helped make MQT NAViz a reality!
   <img src="https://contrib.rocks/image?repo=cda-tum/mqt-naviz" />
 </a>
 </p>
+
+## Getting Started
+
+TODO.
+See, for example, https://github.com/munich-quantum-toolkit/core/blob/main/README.md#getting-started.
+
+## System Requirements
+
+TODO.
+See, for example, https://github.com/munich-quantum-toolkit/core/blob/main/README.md#system-requirements.
 
 ---
 
