@@ -58,23 +58,23 @@ impl AspectPanel {
             (self.left, content_size.y).into(),
         );
 
-        ui.allocate_new_ui(
+        ui.scope_builder(
             UiBuilder::new().max_rect(content_rect.translate(self.space.min.to_vec2())),
             content,
         );
-        ui.allocate_new_ui(
+        ui.scope_builder(
             UiBuilder::new().max_rect(top_rect.translate(self.space.min.to_vec2())),
             top,
         );
-        ui.allocate_new_ui(
+        ui.scope_builder(
             UiBuilder::new().max_rect(right_rect.translate(self.space.min.to_vec2())),
             right,
         );
-        ui.allocate_new_ui(
+        ui.scope_builder(
             UiBuilder::new().max_rect(bottom_rect.translate(self.space.min.to_vec2())),
             bottom,
         );
-        ui.allocate_new_ui(
+        ui.scope_builder(
             UiBuilder::new().max_rect(left_rect.translate(self.space.min.to_vec2())),
             left,
         );

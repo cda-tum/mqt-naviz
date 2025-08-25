@@ -15,7 +15,7 @@ targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
 
 [dependencies]
 constcat = "0.6.0"
-eframe = {version = "0.31.1", default-features = false, features = [
+eframe = {version = "0.32.0", default-features = false, features = [
   "accesskit", # Make egui compatible with screen readers. NOTE: adds a lot of dependencies.
   "default_fonts", # Embed the default egui fonts.
   "persistence", # Persist some data across starts
@@ -23,8 +23,8 @@ eframe = {version = "0.31.1", default-features = false, features = [
   "wayland",
   "x11",
 ]}
-egui = "0.31.1"
-egui_extras = "0.31.1"
+egui = "0.32.0"
+egui_extras = "0.32.0"
 git-version = "0.3.9"
 konst = "0.3.16"
 log = "0.4"
@@ -36,7 +36,7 @@ naviz-repository = {workspace = true}
 naviz-state = {workspace = true}
 rfd = "0.15.0"
 serde = {version = "1.0", features = ["derive"]}
-wgpu = {version = "24", features = ["webgl"]}# Enable webgl-support in wgpu
+wgpu = {version = "25", features = ["webgl"]} # Enable webgl-support in wgpu
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

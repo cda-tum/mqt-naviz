@@ -12,4 +12,4 @@ version = "0.3.1"
 [dependencies]
 naviz-animator = {workspace = true}
 naviz-renderer = {workspace = true}
-wgpu = {version = "24", default-features = false}
+wgpu = {version = "25", default-features = false}

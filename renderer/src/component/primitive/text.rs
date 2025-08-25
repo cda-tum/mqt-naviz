@@ -233,13 +233,9 @@ fn to_text_buffer(
     font_family: &str,
 ) -> Buffer {
     let mut text_buffer = Buffer::new(font_system, Metrics::new(font_size, 1.2 * font_size));
+    let attrs = Attrs::new().family(Family::Name(font_family));
     text_buffer.set_size(font_system, None, None);
-    text_buffer.set_text(
-        font_system,
-        text,
-        Attrs::new().family(Family::Name(font_family)),
-        Shaping::Advanced,
-    );
+    text_buffer.set_text(font_system, text, &attrs, Shaping::Advanced);
     text_buffer.shape_until_scroll(font_system, false);
     text_buffer
 }

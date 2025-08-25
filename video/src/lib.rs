@@ -50,15 +50,13 @@ async fn create_device() -> (Device, Queue) {
         .await
         .expect("No adapter");
     adapter
-        .request_device(
-            &DeviceDescriptor {
-                label: Some("naviz video renderer"),
-                required_features: Features::default(),
-                required_limits: Limits::default(),
-                memory_hints: MemoryHints::default(),
-            },
-            None,
-        )
+        .request_device(&DeviceDescriptor {
+            label: Some("naviz video renderer"),
+            required_features: Features::default(),
+            required_limits: Limits::default(),
+            memory_hints: MemoryHints::default(),
+            trace: wgpu::Trace::default(),
+        })
         .await
         .expect("Failed to create device")
 }
@@ -269,7 +267,7 @@ impl VideoExport {
         buffer_slice.map_async(MapMode::Read, move |result| {
             tx.send(result).unwrap();
         });
-        self.device.poll(wgpu::MaintainBase::Wait);
+        let _ = self.device.poll(wgpu::MaintainBase::Wait);
         rx.recv().unwrap().unwrap();
 
         buffer_slice.get_mapped_range()

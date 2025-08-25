@@ -213,18 +213,18 @@ impl MenuBar {
 
         self.handle_clipboard(ctx, state, errors);
 
-        egui::menu::bar(ui, |ui| {
+        egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
                 if ui.button("Open").clicked() {
                     self.choose_file(FileType::Instructions, future_helper, MenuEvent::file_open);
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
 
                 ui.menu_button("Import", |ui| {
                     for import_format in IMPORT_FORMATS {
                         if ui.button(import_format.name()).clicked() {
                             self.current_import_options = Some((import_format.into(), None));
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                     }
                 });
@@ -237,7 +237,7 @@ impl MenuBar {
                     ui.separator();
                     if ui.button("Quit").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
                 }
             });
@@ -260,7 +260,7 @@ impl MenuBar {
             ui.menu_button("Help", |ui| {
                 if ui.button("About").clicked() {
                     self.about_open = true;
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
             });
         });
@@ -482,12 +482,12 @@ mod selection_menu {
         ui.menu_button(M::NAME, |ui| {
             if ui.button("Open").clicked() {
                 menu_bar.choose_file(M::FILE_TYPE, future_helper, MenuEvent::file_open);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
             #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Import").clicked() {
                 menu_bar.choose_file(M::FILE_TYPE, future_helper, MenuEvent::file_import);
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
 
             ui.separator();
@@ -547,7 +547,7 @@ mod selection_menu {
                                 .inner;
                             if select_button.clicked() {
                                 actions.push(Action::Set(id.to_string()));
-                                ui.close_menu();
+                                ui.close_kind(egui::UiKind::Menu);
                             }
 
                             // Render delete button
@@ -669,7 +669,7 @@ pub mod export {
                 .clicked()
             {
                 self.export_settings.show();
-                ui.close_menu();
+                ui.close_kind(egui::UiKind::Menu);
             }
         }
 
