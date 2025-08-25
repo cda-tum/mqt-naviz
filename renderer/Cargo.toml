@@ -16,7 +16,7 @@ glyphon = "0.8"
 log = "0.4.22"
 naga_oil = "0.17"
 naviz-state = {workspace = true}
-wgpu = {version = "24", default-features = false, features = ["wgsl", "naga-ir"]}
+wgpu = {version = "26", default-features = false, features = ["wgsl", "naga-ir"]}
 
 [build-dependencies]
 ureq = "3.0.5"
