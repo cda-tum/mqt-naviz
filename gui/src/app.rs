@@ -1,5 +1,5 @@
-use core::str;
 use std::ops::{Deref, DerefMut};
+use std::str;
 #[cfg(not(target_arch = "wasm32"))]
 use std::{
     path::{Path, PathBuf},
@@ -23,7 +23,7 @@ use crate::{
     canvas::{CanvasContent, EmptyCanvas, WgpuCanvas},
     current_machine::CurrentMachine,
     error::{
-        ConfigError, ConfigFormat, Error, InputError, InputType, RepositoryError,
+        ConfigError, ConfigFormat, Error, ErrorLocation, InputError, InputType, RepositoryError,
         RepositoryLoadSource, Result,
     },
     errors::{ErrorEmitter, Errors},
@@ -220,7 +220,7 @@ impl AppState {
                 .map_err(|e| {
                     Error::Repository(
                         RepositoryError::Load(RepositoryLoadSource::UserDir, e),
-                        ConfigFormat::Machine,
+                        ConfigFormat::Style,
                     )
                 })
                 .pipe(errors, Repository::empty);
@@ -313,14 +313,49 @@ impl AppState {
 
     /// Open the naviz-instructions from `data`
     pub fn open(&mut self, data: &[u8]) -> Result<()> {
-        let input = naviz_parser::input::lexer::lex(
-            str::from_utf8(data)
-                .map_err(|e| Error::FileOpen(InputType::Instruction(InputError::UTF8(e))))?,
-        )
-        .map_err(|e| Error::FileOpen(InputType::Instruction(InputError::Lex(e.into_inner()))))?;
-        let input = naviz_parser::input::parser::parse(&input).map_err(|e| {
-            Error::FileOpen(InputType::Instruction(InputError::Parse(e.into_inner())))
+        let text = str::from_utf8(data)
+            .map_err(|e| Error::FileOpen(InputType::Instruction(InputError::UTF8(e))))?;
+
+        let input = naviz_parser::input::lexer::lex(text).map_err(|e| {
+            let location = ErrorLocation::from_offset(text, e.offset());
+            Error::FileOpen(InputType::Instruction(InputError::Lex(
+                e.into_inner(),
+                Some(location),
+            )))
         })?;
+
+        let input = naviz_parser::input::parser::parse(&input).map_err(|e| {
+            // Estimate line from number of separator tokens before the error index.
+            let token_index = e.offset();
+            use naviz_parser::input::lexer::Token as InTok;
+            let line = 1 + input
+                .iter()
+                .take(token_index.min(input.len()))
+                .filter(|t| matches!(t, InTok::Separator))
+                .count();
+            // Find byte offset of start of that line
+            let mut current_line = 1usize;
+            let mut line_start_offset = 0usize;
+            for (i, ch) in text.char_indices() {
+                if current_line == line {
+                    break;
+                }
+                if ch == '\n' {
+                    current_line += 1;
+                    line_start_offset = i + 1;
+                }
+            }
+            let location = ErrorLocation {
+                line,
+                column: 1,
+                offset: line_start_offset,
+            };
+            Error::FileOpen(InputType::Instruction(InputError::Parse(
+                e.into_inner(),
+                Some(location),
+            )))
+        })?;
+
         let input = naviz_parser::input::concrete::Instructions::new(input)
             .map_err(|e| Error::FileOpen(InputType::Instruction(InputError::Convert(e))))?;
         self.animator_adapter.set_instructions(input);
@@ -407,32 +442,33 @@ impl AppState {
 
     /// Set the current machine to the one specified in `data`.
     pub fn set_machine_manually(&mut self, data: &[u8]) -> Result<()> {
-        let machine = naviz_parser::config::lexer::lex(str::from_utf8(data).map_err(|e| {
+        let s = str::from_utf8(data).map_err(|e| {
             Error::FileOpen(InputType::Config(
                 ConfigFormat::Machine,
                 ConfigError::UTF8(e),
             ))
-        })?)
-        .map_err(|e| {
+        })?;
+        let toks = naviz_parser::config::lexer::lex(s).map_err(|e| {
+            let loc = ErrorLocation::from_offset(s, e.offset());
             Error::FileOpen(InputType::Config(
                 ConfigFormat::Machine,
-                ConfigError::Lex(e.into_inner()),
+                ConfigError::Lex(e.into_inner(), Some(loc)),
             ))
         })?;
-        let machine = naviz_parser::config::parser::parse(&machine).map_err(|e| {
+        let parsed = naviz_parser::config::parser::parse(&toks).map_err(|e| {
             Error::FileOpen(InputType::Config(
                 ConfigFormat::Machine,
-                ConfigError::Parse(e.into_inner()),
+                ConfigError::Parse(e.into_inner(), None),
             ))
         })?;
-        let machine: naviz_parser::config::generic::Config = machine.into();
-        let machine: MachineConfig = machine.try_into().map_err(|e| {
+        let gen: naviz_parser::config::generic::Config = parsed.into();
+        let mach: MachineConfig = gen.try_into().map_err(|e| {
             Error::FileOpen(InputType::Config(
                 ConfigFormat::Machine,
                 ConfigError::Convert(e),
             ))
         })?;
-        self.set_loaded_machine(None::<String>, machine);
+        self.set_loaded_machine(None::<String>, mach);
         // keep machine in persistence
         self.persistence.machine = Some(IdOrManual::Manual(data.into()));
         Ok(())
@@ -464,30 +500,30 @@ impl AppState {
 
     /// Set the current style to the one specified in `data`.
     pub fn set_style_manually(&mut self, data: &[u8]) -> Result<()> {
-        let visual = naviz_parser::config::lexer::lex(str::from_utf8(data).map_err(|e| {
+        let s = str::from_utf8(data).map_err(|e| {
             Error::FileOpen(InputType::Config(ConfigFormat::Style, ConfigError::UTF8(e)))
-        })?)
-        .map_err(|e| {
+        })?;
+        let toks = naviz_parser::config::lexer::lex(s).map_err(|e| {
+            let loc = ErrorLocation::from_offset(s, e.offset());
             Error::FileOpen(InputType::Config(
                 ConfigFormat::Style,
-                ConfigError::Lex(e.into_inner()),
+                ConfigError::Lex(e.into_inner(), Some(loc)),
             ))
         })?;
-        let visual = naviz_parser::config::parser::parse(&visual).map_err(|e| {
+        let parsed = naviz_parser::config::parser::parse(&toks).map_err(|e| {
             Error::FileOpen(InputType::Config(
                 ConfigFormat::Style,
-                ConfigError::Parse(e.into_inner()),
+                ConfigError::Parse(e.into_inner(), None),
             ))
         })?;
-        let visual: naviz_parser::config::generic::Config = visual.into();
-        let visual: VisualConfig = visual.try_into().map_err(|e| {
+        let gen: naviz_parser::config::generic::Config = parsed.into();
+        let vis: VisualConfig = gen.try_into().map_err(|e| {
             Error::FileOpen(InputType::Config(
                 ConfigFormat::Style,
                 ConfigError::Convert(e),
             ))
         })?;
-        self.set_loaded_style(None::<String>, visual);
-        // keep style in persistence
+        self.set_loaded_style(None::<String>, vis);
         self.persistence.style = Some(IdOrManual::Manual(data.into()));
         Ok(())
     }
@@ -524,7 +560,18 @@ impl AppState {
     pub fn import_machine(&mut self, path: &Path) -> Result<()> {
         self.machine_repository
             .import_machine_to_user_dir(path)
-            .map_err(|e| Error::Repository(RepositoryError::Import(e), ConfigFormat::Machine))?;
+            .map_err(|e| {
+                use naviz_repository::error::Error as RErr;
+                let loc = match &e {
+                    RErr::LexError(offset, _) | RErr::ParseError(offset, _) => {
+                        std::fs::read_to_string(path)
+                            .ok()
+                            .map(|c| ErrorLocation::from_offset(&c, *offset))
+                    }
+                    _ => None,
+                };
+                Error::Repository(RepositoryError::Import(e, loc), ConfigFormat::Machine)
+            })?;
         self.update_machines();
         Ok(())
     }
@@ -536,7 +583,18 @@ impl AppState {
     pub fn import_style(&mut self, path: &Path) -> Result<()> {
         self.style_repository
             .import_style_to_user_dir(path)
-            .map_err(|e| Error::Repository(RepositoryError::Import(e), ConfigFormat::Style))?;
+            .map_err(|e| {
+                use naviz_repository::error::Error as RErr;
+                let loc = match &e {
+                    RErr::LexError(offset, _) | RErr::ParseError(offset, _) => {
+                        std::fs::read_to_string(path)
+                            .ok()
+                            .map(|c| ErrorLocation::from_offset(&c, *offset))
+                    }
+                    _ => None,
+                };
+                Error::Repository(RepositoryError::Import(e, loc), ConfigFormat::Style)
+            })?;
         self.update_styles();
         Ok(())
     }
@@ -581,7 +639,7 @@ impl AppState {
         }
     }
 
-    /// Updates the cached list of machines
+    /// Updates the cached list of machines.
     fn update_machines(&mut self) {
         self.cache.update_machines(
             &self.machine_repository,
@@ -592,7 +650,7 @@ impl AppState {
         );
     }
 
-    /// Updates the cached list of styles
+    /// Updates the cached list of styles.
     fn update_styles(&mut self) {
         self.cache.update_styles(&self.style_repository);
     }
@@ -617,7 +675,7 @@ impl AppState {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Menu
+        // Menu bar
         egui::TopBottomPanel::top("app_menu").show(ctx, |ui| {
             self.ui.menu_bar.draw(
                 &mut self.state,
@@ -640,7 +698,7 @@ impl eframe::App for App {
                 left: 0.,
                 right: 0.,
             };
-            let animator_state = self.animator_adapter.get();
+            let animator_state = self.state.animator_adapter.get();
             panel.draw(
                 ui,
                 |ui| {
@@ -655,7 +713,7 @@ impl eframe::App for App {
                 |_| {},
                 |ui| {
                     ui.add_space(padding);
-                    self.animator_adapter.draw_progress_bar(ui);
+                    self.state.animator_adapter.draw_progress_bar(ui);
                 },
                 |_| {},
             );
@@ -665,7 +723,7 @@ impl eframe::App for App {
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, eframe::APP_KEY, &self.persistence);
+        eframe::set_value(storage, eframe::APP_KEY, &self.state.persistence);
     }
 }
 

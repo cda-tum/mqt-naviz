@@ -98,7 +98,6 @@ impl MenuBar {
         // Extract extension
         if let Some(extension) = Path::new(name).extension() {
             let extension = &*extension.to_string_lossy();
-
             // Internal formats
             for file_type in [FileType::Instructions, FileType::Machine, FileType::Style] {
                 // File extension is known?
@@ -106,7 +105,6 @@ impl MenuBar {
                     return state.open_by_type(file_type, &contents);
                 }
             }
-
             // Imported formats
             for import_format in IMPORT_FORMATS {
                 // File extension is known by some import-format?
@@ -117,7 +115,6 @@ impl MenuBar {
                 }
             }
         }
-
         Ok(())
     }
 

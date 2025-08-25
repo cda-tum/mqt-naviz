@@ -249,6 +249,7 @@ pub mod token {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::test_utils::byte_offset_to_line_column;
 
     #[test]
     pub fn simple_example() {
@@ -361,5 +362,104 @@ mod test {
         let actual = lex(input).expect("Failed to lex");
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn error_location_byte_offset_conversion() {
+        let test_cases = vec![
+            // (text, offset, expected_line, expected_column)
+            ("hello", 0, 1, 1),        // Start of text
+            ("hello", 2, 1, 3),        // Middle of first line
+            ("hello", 5, 1, 6),        // End of first line
+            ("hello\n", 5, 1, 6),      // Before newline
+            ("hello\n", 6, 2, 1),      // After newline (start of line 2)
+            ("hello\nworld", 6, 2, 1), // Start of line 2
+            ("hello\nworld", 8, 2, 3), // Middle of line 2
+            ("a\nb\nc", 0, 1, 1),      // Start
+            ("a\nb\nc", 2, 2, 1),      // Start of line 2
+            ("a\nb\nc", 4, 3, 1),      // Start of line 3
+            ("a\nb\nc", 5, 3, 2),      // End of text
+        ];
+
+        for (text, offset, expected_line, expected_column) in test_cases {
+            let (line, column) = byte_offset_to_line_column(text, offset);
+            assert_eq!(
+                (line, column),
+                (expected_line, expected_column),
+                "Failed for text '{}' at offset {}: expected line {}, column {}, got line {}, column {}",
+                text.replace('\n', "\\n"), offset, expected_line, expected_column, line, column
+            );
+        }
+    }
+
+    #[test]
+    fn error_location_unicode_handling() {
+        let test_cases = vec![
+            // Unicode characters should be counted as single characters for column positions
+            ("🚀", 0, 1, 1),     // Start of emoji
+            ("🚀", 4, 1, 2),     // After emoji (emojis are 4 bytes in UTF-8)
+            ("🚀a", 4, 1, 2),    // Between emoji and ASCII
+            ("🚀a", 5, 1, 3),    // After ASCII following emoji
+            ("🚀\n🔬", 5, 2, 1), // Start of line 2 after emoji and newline
+            ("🚀\n🔬", 9, 2, 2), // After second emoji
+            ("café", 0, 1, 1),   // Start
+            ("café", 3, 1, 4),   // Before the é (é is 2 bytes)
+            ("café", 5, 1, 5),   // End of text with accented char
+        ];
+
+        for (text, offset, expected_line, expected_column) in test_cases {
+            let (line, column) = byte_offset_to_line_column(text, offset);
+            assert_eq!(
+                (line, column),
+                (expected_line, expected_column),
+                "Failed for text '{text}' at offset {offset}: expected line {expected_line}, column {expected_column}, got line {line}, column {column}",
+            );
+        }
+    }
+
+    #[test]
+    fn error_location_different_line_endings() {
+        let test_cases = vec![
+            // Unix line endings (\n)
+            ("line1\nline2", 6, 2, 1),
+            // Windows line endings (\r\n) - \r should be treated as regular character
+            ("line1\r\nline2", 6, 1, 7), // \r is at position 6, still on line 1
+            ("line1\r\nline2", 7, 2, 1), // \n at position 7 starts line 2
+            ("line1\r\nline2", 8, 2, 2), // First char of line2
+            // Old Mac line endings (\r only) - \r should NOT start new line
+            ("line1\rline2", 6, 1, 7), // \r is just another character
+            ("line1\rline2", 7, 1, 8), // Next char after \r
+        ];
+
+        for (text, offset, expected_line, expected_column) in test_cases {
+            let (line, column) = byte_offset_to_line_column(text, offset);
+            assert_eq!(
+                (line, column),
+                (expected_line, expected_column),
+                "Failed for text '{}' at offset {}: expected line {}, column {}, got line {}, column {}",
+                text.replace('\n', "\\n").replace('\r', "\\r"), offset, expected_line, expected_column, line, column
+            );
+        }
+    }
+
+    #[test]
+    fn error_location_edge_cases() {
+        // Empty string
+        let (line, column) = byte_offset_to_line_column("", 0);
+        assert_eq!((line, column), (1, 1));
+
+        // Offset beyond text length should not panic and should give reasonable result
+        let (line, column) = byte_offset_to_line_column("hello", 10);
+        assert_eq!((line, column), (1, 6)); // Should stop at end of text
+
+        // Multiple consecutive newlines
+        let (line, column) = byte_offset_to_line_column("\n\n\n", 0);
+        assert_eq!((line, column), (1, 1));
+        let (line, column) = byte_offset_to_line_column("\n\n\n", 1);
+        assert_eq!((line, column), (2, 1));
+        let (line, column) = byte_offset_to_line_column("\n\n\n", 2);
+        assert_eq!((line, column), (3, 1));
+        let (line, column) = byte_offset_to_line_column("\n\n\n", 3);
+        assert_eq!((line, column), (4, 1));
     }
 }

@@ -571,4 +571,19 @@ mod test {
 
         parse(&input).expect_err("Invalid input was parsed without error");
     }
+
+    #[test]
+    fn parser_error_context_available() {
+        // Minimal invalid input: identifier without trailing separator should error
+        let tokens = vec![Token::Identifier("instruction")];
+
+        let err = parse(&tokens).expect_err("Input parser accepted instruction without separator");
+        // Collect any available context (may be empty depending on parsing path)
+        let _context: Vec<String> = err
+            .into_inner()
+            .context()
+            .map(|ctx| ctx.to_string())
+            .collect();
+        // No assertion on non-emptiness; purpose is to ensure error occurs and context retrieval works.
+    }
 }

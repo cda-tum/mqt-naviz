@@ -158,6 +158,7 @@ pub mod token {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::test_utils::byte_offset_to_line_column;
 
     #[test]
     pub fn simple_example() {
@@ -205,5 +206,94 @@ mod test {
         let lexed = lex(input).expect("Failed to lex");
 
         assert_eq!(lexed, expected);
+    }
+
+    #[test]
+    fn error_location_byte_offset_conversion() {
+        let test_cases = vec![
+            // (text, offset, expected_line, expected_column)
+            ("property: value", 0, 1, 1),              // Start of text
+            ("property: value", 8, 1, 9),              // At colon
+            ("property: value", 10, 1, 11),            // After space and before 'v'
+            ("name: \"test\"\ncolor: blue", 13, 2, 1), // Start of line 2 (offset after newline)
+            ("name: \"test\"\ncolor: blue", 19, 2, 7), // At space before 'blue'
+            ("a: b\nc: d\ne: f", 5, 2, 1), // Start of line 2 (offset after first newline)
+            ("a: b\nc: d\ne: f", 10, 3, 1), // Start of line 3 (offset after second newline)
+        ];
+
+        for (text, offset, expected_line, expected_column) in test_cases {
+            let (line, column) = byte_offset_to_line_column(text, offset);
+            assert_eq!(
+                (line, column),
+                (expected_line, expected_column),
+                "Failed for text '{}' at offset {}: expected line {}, column {}, got line {}, column {}",
+                text.replace('\n', "\\n"), offset, expected_line, expected_column, line, column
+            );
+        }
+    }
+
+    #[test]
+    fn error_location_config_unicode() {
+        let test_cases = vec![
+            // Config files with Unicode content
+            ("name: \"🚀 test\"", 0, 1, 1),    // Start
+            ("name: \"🚀 test\"", 7, 1, 8),    // At emoji (byte 7, char 8)
+            ("name: \"🚀 test\"", 11, 1, 9),   // After emoji, at space
+            ("🚀: value\n🔬: data", 12, 2, 1), // Start of line 2 with Unicode key (offset after newline)
+        ];
+
+        for (text, offset, expected_line, expected_column) in test_cases {
+            let (line, column) = byte_offset_to_line_column(text, offset);
+            assert_eq!(
+                (line, column),
+                (expected_line, expected_column),
+                "Failed for text '{text}' at offset {offset}: expected line {expected_line}, column {expected_column}, got line {line}, column {column}",
+            );
+        }
+    }
+
+    #[test]
+    fn error_location_calculation_with_tabs() {
+        let test_cases = vec![
+            ("line1\n\tindented", 6, (2, 1)), // Start of line 2 with tab
+            ("line1\n\tindented", 7, (2, 2)), // After tab character
+            ("no_tabs", 3, (1, 4)),           // Simple case
+            ("tab\there", 4, (1, 5)),         // After tab in same line
+        ];
+
+        for (input, offset, expected) in test_cases {
+            let result = byte_offset_to_line_column(input, offset);
+            assert_eq!(
+                result,
+                expected,
+                "Failed for input '{}' at offset {}: expected {:?}, got {:?}",
+                input.replace('\n', "\\n").replace('\t', "\\t"),
+                offset,
+                expected,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn error_location_edge_cases() {
+        // Test edge cases for error location calculation
+
+        // Empty string
+        let result = byte_offset_to_line_column("", 0);
+        assert_eq!(result, (1, 1));
+
+        // Single character
+        let result = byte_offset_to_line_column("a", 0);
+        assert_eq!(result, (1, 1));
+
+        // Just newlines
+        let result = byte_offset_to_line_column("\n\n\n", 2);
+        assert_eq!(result, (3, 1));
+
+        // End of string
+        let input = "hello\nworld";
+        let result = byte_offset_to_line_column(input, input.len());
+        assert_eq!(result, (2, 6)); // After 'world'
     }
 }
